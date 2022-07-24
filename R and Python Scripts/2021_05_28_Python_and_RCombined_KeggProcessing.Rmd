@@ -1,0 +1,227 @@
+---
+title: "Turning Kegg IDS into annotated functions"
+output: html_notebook
+author: claire e williamsb
+---
+
+
+```{r}
+# load packages
+library(tidyverse)
+library(qiime2R)
+library(readxl)
+library(reticulate) # allows python to be used inside RStudio
+```
+First we extract the kegg ids from the QIIME PICRUSt2 file 
+```{r}
+# extract the kegg ids from the qiime file so we can map them to their functions.
+
+# this is done in KEGG mapper online. 
+kegg<-read_qza("ko_metagenome.qza")
+data<-kegg$data
+data.df<-as.data.frame(data)
+data.df<-rownames_to_column(data.df, "IDS")
+IDS<-data.df$IDS
+
+#write.csv(IDS, "kegg_ids.csv")
+```
+
+
+Python code for cleaning up the kegg mapped data. don't run this unless you want to reproduce the files used in this document. 
+Essentially what this does is takes in the output of the kegg mapper and cleans it up into a usable dataframe. 
+```{python}
+import csv
+
+def cleanup(list_of_strings):
+    count = 0
+    out_string = ""
+    for string in list_of_strings:
+        if count < (len(list_of_strings) - 1):
+                out_string = out_string + string + " "
+        count = count + 1
+    return out_string
+
+if __name__ == '__main__':
+    with open("KeggAnnotations.csv") as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=",")
+        map_parameters = ["", "", ""]
+        final_file = open("PythonOutput.csv", "w")
+        line_count = 0
+
+        for row in csv_reader:
+            if line_count > 0:
+                data = row[0]
+                first_three_letters = data[0:3]
+                if first_three_letters == "map":
+                    map_parameters = data.split()
+                else:
+                    k_parameters = data.split()
+                    final_file.write(k_parameters[0] + "," + cleanup(map_parameters) + "\n")
+            line_count = line_count + 1
+    final_file.close()
+    csv_file.close()
+    
+```
+
+More Python code for cleaning up the kegg mapped data. don't run this unless you want to reproduce the documents in this analysis. 
+```{python}
+import csv 
+# hierarchy file is the file that contains the big and little H's 
+
+# map assignments is the file that contains the kegg ids and their values
+map_assignments_open = open("map_assignments.csv")
+map_assignments = csv.reader(map_assignments_open, delimiter=",")
+
+# the final file I am going to write 
+final_file = open("PythonOUT2.csv", "w")
+
+line_count_map_assignment = 0
+
+for map_assignment in map_assignments:
+    
+    if line_count_map_assignment > 0:
+        
+        kegg_id = map_assignment[0]
+        map_id = map_assignment[1]
+        function = map_assignment[2]
+        line_count_hierarchy = 0
+        first_letter = ""
+        hierarchy_file_open = open("KeggHierarchyFile.csv", "r")
+        hierarchy_file = csv.reader(hierarchy_file_open, delimiter=",")
+        for hierarchy in hierarchy_file: 
+            if line_count_hierarchy > 0: 
+                first_letter = hierarchy[0][0:1]
+                if first_letter == "H": 
+                    heading_one = hierarchy[0][2:]
+                if first_letter == "h":
+                    heading_two = hierarchy[0][2:]
+                if hierarchy[0] == map_id:
+                    final_file.write(kegg_id + "," + map_id + "," + heading_one + "," + heading_two + "," + function + "\n")
+            line_count_hierarchy = line_count_hierarchy + 1          
+    hierarchy_file_open.close()
+    line_count_map_assignment = line_count_map_assignment + 1
+
+final_file.close()
+hierarchy_file_open.close() 
+map_assignments_open.close()    
+
+```
+
+R code for creating a consensus file. 
+```{r}
+hierarchy_file<-read.csv("WithoutGlobalOverviewPythonOUT2.csv", header = F)
+names(hierarchy_file) <- c("KeggID","Map","Heading1","Heading2","Function")
+
+kegg<-hierarchy_file$KeggID
+headingone<-hierarchy_file$Heading1
+headingtwo<-hierarchy_file$Heading2
+
+kegg.id.final <- c()
+heading.1.final<-c()
+heading.2.final<-c()
+final.df<-data.frame(kegg.id.final, heading.1.final, heading.2.final)
+
+multiple_check_headingone <- function(start_index, end_index){
+length(unique(headingone[start_index:end_index])) > 1
+}
+
+multiple_check_headingtwo <- function(start_index, end_index){
+length(unique(headingtwo[start_index:end_index])) > 1
+}
+
+start_index = 0
+end_index = 0
+
+for (i in 1:length(kegg)) {
+  if (i > 1) {
+    if  (kegg[i] != kegg[i - 1]){
+      end_index = i - 1
+      heading.1 = ifelse(multiple_check_headingone(start_index, end_index), "multiple", headingone[start_index])
+      heading.2 = ifelse(multiple_check_headingtwo(start_index, end_index), "multiple", headingtwo[start_index])
+      vector_toadd = c(kegg[i - 1], heading.1, heading.2)
+      final.df = rbind(final.df, vector_toadd)
+      start_index = i
+    }
+  }
+  else{
+    start_index = i
+  }
+}
+
+
+kegg.consensus = final.df
+names(kegg.consensus)<-c("IDS", "HeadingOne", "HeadingTwo")
+```
+
+```{r}
+
+kegg.featuretable<-read_qza("ko_metagenome.qza")
+kegg.data<-kegg.featuretable$data %>%
+          as.data.frame() %>%
+          rownames_to_column(., "IDS")
+
+# this is the sum in all samples. 
+kegg.data <- kegg.data %>%
+          mutate(Sum = rowSums(kegg.data[, c(2:94)],na.rm = TRUE))
+
+
+total.reads<-sum(kegg.data$Sum)
+
+kegg.data<-mutate(kegg.data, Relative.Abundance = kegg.data$Sum / total.reads)
+
+kegg.data.with.consensus<-left_join(kegg.data, kegg.consensus)
+
+kegg.data.with.consensus$HeadingOne<-ifelse(is.na(kegg.data.with.consensus$HeadingOne), "Unknown", kegg.data.with.consensus$HeadingOne)
+kegg.data.with.consensus$HeadingTwo<-ifelse(is.na(kegg.data.with.consensus$HeadingTwo), "Unknown", kegg.data.with.consensus$HeadingTwo)
+
+
+kegg.data.with.consensus.known<-filter(kegg.data.with.consensus, 
+                                       kegg.data.with.consensus$HeadingOne != "Unknown" |
+                                         kegg.data.with.consensus$HeadingTwo != "Unknown")
+
+
+kegg.data.with.consensus.known.long<-pivot_longer(kegg.data.with.consensus.known,
+     cols = `2A`:`Z`, 
+     names_to = "sample", 
+     values_to = "abundance")
+
+just.h2<-kegg.data.with.consensus.known.long[,c(5,7 )]
+
+kegg.aggregated <- aggregate(kegg.data.with.consensus.known.long$abundance, 
+                            by = list(kegg.data.with.consensus.known.long$HeadingTwo), 
+                            FUN = sum, 
+                            na.rm = TRUE)
+
+kegg.aggregated<-as.data.frame(kegg.aggregated)
+
+top.kegg.aggregated <- dplyr::filter(kegg.aggregated, kegg.aggregated$x > 131251200)
+
+
+top.kegg.aggregated.functions<-top.kegg.aggregated$Group.1
+
+
+```
+
+```{r}
+# plot for the heading one category
+p1<-ggplot(kegg.data.with.consensus.known.long,
+           aes(x=sample,
+               y=abundance, 
+               fill = HeadingOne)) + 
+  geom_bar(stat="identity", position="fill")
+
+# plot for the heading two category
+
+# first, filter so we only have the categories of heading two that are the top 10 abundant.
+top.10.heading.two<-filter(kegg.data.with.consensus.known.long, kegg.data.with.consensus.known.long$HeadingTwo %in% top.kegg.aggregated.functions)
+
+p2<-ggplot(top.10.heading.two,
+           aes(x=sample,
+               y=abundance, 
+               fill = HeadingTwo)) + 
+  geom_bar(stat="identity", position="fill")
+
+#write.csv(top.10.heading.two, "Top10FunctionsKegg.csv")
+
+
+```

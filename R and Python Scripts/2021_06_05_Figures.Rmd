@@ -1,0 +1,1320 @@
+---
+title: "Lizard Microbiome Figures"
+author: "claire"
+date: "7/10/2020"
+output: html_document
+---
+
+```{r Figure 2,  warning=FALSE, message=FALSE, fig.width = 7, fig.height = 6}
+
+#Requirements
+library(qiime2R)
+library(tidyverse)
+library(plyr)
+library(phyloseq)
+library(RColorBrewer)
+library(mosaic)
+library(ggsignif)
+library(ggthemes)
+library(cowplot)
+library(egg)
+
+
+#make phyloseq object
+phy <- qza_to_phyloseq("final_feature_table.qza", "rooted-tree.qza", "silva-taxonomy.qza", "liz-micro-metadata.tsv")
+
+#agglomerate taxa at the Family level
+glom<-tax_glom(phy, taxrank= 'Family')
+
+# melt phyloseq to dataframe
+dataf.2<- psmelt(glom)
+
+dataf.2<- dataf.2 %>%
+  as.tibble() %>%
+  dplyr::group_by(Sample) %>%
+  dplyr::mutate(rel_abun = Abundance / sum(Abundance)) %>%
+  ungroup()
+
+#convert family names to character vectors
+dataf.2$Family<-as.character(dataf.2$Family)
+
+#find the median abundance of each family
+medians <- ddply(dataf.2, ~Family, function(x) c(median=median(x$rel_abun)))
+
+# if the median abundance is less than 4%, then add that to the remainder vector
+remainder<- medians[medians$median <= 0.04,]$Family
+
+#if the family name in the sheet is in the remainder, rename it to be "Remainder"
+dataf.2[dataf.2$Family %in% remainder | dataf.2$Family == "" | is.na(dataf.2$Family),]$Family<- 'Remainder'
+
+
+
+#rename the population names from their hyphenated format to final labels (sets them to character vectors first)
+dataf.2$sourcepop<-as.character(dataf.2$sourcepop)
+dataf.2[dataf.2$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+dataf.2[dataf.2$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+dataf.2[dataf.2$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+dataf.2[dataf.2$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+dataf.2[dataf.2$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+dataf.2[dataf.2$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+dataf.2.wild<-filter(dataf.2, sourcepop == "Mainland (2019)" | sourcepop == "Mainland (2017)" | sourcepop == "Island C (2019)" | sourcepop == "Island P (2019)")
+
+# these colors are kind of ugly. I can create my own palette but I don't really want to LOL 
+# get the colors for the various families from the palette "Paired"
+colorCount = length(unique(dataf.2$Family))
+getPalette = colorRampPalette(brewer.pal(9, "Paired"))
+
+# factor the sourcepop column so that it's in the order that I want it for the axis 
+dataf.2.wild$sourcepop_f = factor(dataf.2.wild$sourcepop, levels=c('Mainland (2017)','Mainland (2019)','',"Island C (2019)", "Island P (2019)"))
+
+dataf.2.wild$Family = factor(dataf.2.wild$Family, levels =c("Lachnospiraceae", "Bacteroidaceae", "Akkermansiaceae", "Enterobacteriaceae", "Tannerellaceae", "Ruminococcaceae","Clostridiaceae 1", "Erysipelotrichaceae", "Peptostreptococcaceae", "Marinifilaceae", "Rikenellaceae", "Veillonellaceae", "Eggerthellaceae", "Family XIII", "Peptococcaceae","Clostridiales vadinBB60 group", "Remainder"))
+
+#build plot
+p1<-ggplot(dataf.2.wild,
+           aes(x=Sample,
+               y=Abundance, fill = Family)) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_few() +
+  scale_fill_manual(values=getPalette(colorCount)) +
+  theme(legend.position = "none") +
+  guides(fill=guide_legend(nrow=5)) +
+  xlab("Sample") +
+  ylab("Relative abundance") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.x= element_text(family="sans", size=9, face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5,  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text = element_text(size=10,family="sans")) +
+  theme(legend.title = element_text(size = 12, family="sans")) +
+  guides(fill=guide_legend(ncol=3)) +
+  theme(axis.text.x = element_text(angle = 90, family="sans")) +
+  facet_grid(~sourcepop_f, scales = "free", space = "free", labeller = label_wrap_gen(width=10)) +
+    ggtitle("Field Transplant Experiment") +
+  theme(plot.title = element_text("sans", 'bold', 'black',  14 )) + 
+  theme(axis.text.x=element_blank())   +
+  scale_y_continuous(breaks = seq(0, 1, 0.25), 
+                   limits = c(0,1), 
+                   expand = c(0,0))  
+
+
+# filter to only the greenhouse experiments
+dataf.2.climate<- filter(dataf.2, sourcepop == "Control greenhouse" | sourcepop == "Warm greenhouse")
+
+# factor the sourcepop column so that it's in the order that I want it for the axis 
+dataf.2.climate$sourcepop_f = factor(dataf.2.climate$sourcepop, levels=c("Control greenhouse","Warm greenhouse"))
+
+# subset only the top taxa. 
+dataf.2.climate$Family = factor(dataf.2.climate$Family, levels =c("Lachnospiraceae", "Bacteroidaceae", "Akkermansiaceae", "Enterobacteriaceae", "Tannerellaceae", "Ruminococcaceae","Clostridiaceae 1", "Erysipelotrichaceae", "Peptostreptococcaceae", "Marinifilaceae", "Rikenellaceae", "Veillonellaceae", "Eggerthellaceae", "Family XIII", "Peptococcaceae","Clostridiales vadinBB60 group", "Remainder"))
+
+#build plot
+p2<-ggplot(dataf.2.climate,
+           aes(x=Sample,
+               y=Abundance, fill = Family)) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_few() +
+  scale_fill_manual(values=getPalette(colorCount)) +
+  theme(legend.position = "right") +
+  xlab("Sample") +
+  ylab("Relative abundance") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.x= element_text(family="sans", size=10, face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold", vjust = 3)) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text = element_text(size=9,family="sans")) +
+  guides(colour = guide_legend(override.aes = list(size=1))) +
+  theme(legend.title = element_text(size = 12, family="sans")) +
+  guides(fill=guide_legend(ncol=1)) +  
+  theme(axis.text.x = element_text(angle = 90, family="sans")) +
+  facet_grid(~sourcepop_f, scales = "free", space = "free", labeller = label_wrap_gen(width=10)) +
+  ggtitle("Greenhouse Experiment") +
+  theme(plot.title = element_text("sans", 'bold', 'black', 14)) + 
+   theme(axis.text.x=element_blank()) +
+  scale_y_continuous(breaks = seq(0, 1, .25), 
+                   limits = c(0,1), 
+                   expand = c(0,0))  
+
+#Read in the jaccard data
+data<-read.csv("wild/wild_jaccard_withingroup.csv")
+
+#Changing group1 to be called sourcepop
+names(data)[names(data) == "Group1"] <- "sourcepop"
+
+#Rename all of the groups to their final name for the figure
+data$sourcepop<-as.character(data$sourcepop)
+data[data$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+data[data$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+data[data$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+data[data$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+#Factor into the order that I want for the axis
+data$sourcepop_f = factor(data$sourcepop, levels=c('Mainland (2017)','Mainland (2019)',"Island C (2019)", "Island P (2019)"))
+
+#Set the colors in order corresponding to the factored list above (from palette "Paired")
+thecolors<-c("#FB9A99", "#E31A1C","#B2DF8A","#33A02C")
+
+#plot
+p3<- ggplot(data, aes(x=sourcepop_f, y=Distance, fill = sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) + 
+  theme_few() +
+ theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+       panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Treatment group") +
+  ylab("Jaccard distance") +
+  labs(fill= "Treatment") +
+  scale_fill_manual(values = thecolors) +
+  theme(panel.border = element_blank(), axis.line = element_line())
+
+
+# Filter out only the greenhouse 
+filtered.climate<-read.csv("climate-chamber/climate_jaccard_withingroup.csv")
+
+#Changing group1 to be called sourcepop
+names(filtered.climate)[names(filtered.climate) == "Group1"] <- "sourcepop"
+
+filtered.climate[filtered.climate$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+filtered.climate[filtered.climate$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+
+#Factor into the order that I want for the axis
+filtered.climate$sourcepop_f = factor(filtered.climate$sourcepop, levels=c("Control greenhouse","Warm greenhouse"))
+
+#Set the colors in order corresponding to the factored list above (from palette "Paired")
+thecolors<-c("#A6CEE3", "#1F78B4")
+
+#plot
+p4<- ggplot(filtered.climate, aes(x=sourcepop_f, y=Distance, fill = sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) + 
+  theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+       panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Treatment group") +
+  ylab("Jaccard distance") +
+  labs(fill= "Treatment") +
+  scale_fill_manual(values = thecolors) +
+  theme(panel.border = element_blank(), axis.line = element_line()) + 
+  geom_signif(comparisons = list(c("Control greenhouse", "Warm greenhouse")),
+              test = "wilcox.test", map_signif_level = T, tip_length = 0, y_position = 0.85, textsize = 8 )
+
+#Calculate mean Jaccard distance
+cat("The mean Jaccard Distance for wild lizards is", round(mean(data$Distance), 3), ".")
+cat("The mean Jaccard Distance for climate chamber lizards is", round(mean(filtered.climate$Distance), 3), ".")
+
+#Plot the row
+plot_row1<-plot_grid(p1, p2, rel_widths = c(1, 1), labels= c('A', 'B'), label_size = 24)
+plot_row2<-plot_grid(p3, p4, rel_widths = c(1, 1), labels = c('C', 'D'))
+
+#Add the title
+title <- ggdraw() + 
+  draw_label(
+    "Figure 2",
+    fontface = 'bold',
+    x = 0,
+    hjust = .5,
+    size = 18
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0,  40)
+  )
+
+
+#Plot the title above the row of plots.  
+f2<-plot_grid(
+   plot_row1,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(1)
+)
+
+ggsave( "Figure2.png", width = 14, height = 6)
+
+```
+
+
+
+
+```{r Figure 4, warning=FALSE, message=FALSE, fig.height=6, fig.width =5}
+
+## Make a new Phyloseq Object! 
+phy<-qiime2R::qza_to_phyloseq("final_feature_table.qza", "rooted-tree.qza","silva-taxonomy.qza", "liz-micro-metadata.tsv")
+
+## subset samples of interest
+phys_subset<-subset_samples(phy, sourcepop=="Mainland-2017" | sourcepop=="Mainland-2019" | 
+                sourcepop== "Island-P-2019" | sourcepop == "Island-C-2019")
+
+##Merge Samples by Source Population
+phy_sourcepop<-merge_samples(phys_subset, "sourcepop")
+
+## Normalize
+phy_sourcepop_norm<-transform_sample_counts(phy_sourcepop, function(x) x/sum(x))
+
+# Agglomerate taxa at the phylum level
+glom<-tax_glom(phy_sourcepop_norm, taxrank= 'Phylum')
+
+#melt -> dataframe
+dataf<- psmelt(glom)
+
+#convert Phlyum names to character vector
+dataf$Phylum<-as.character(dataf$Phylum)
+
+#find the median abundance of each phylum 
+medians<-ddply(dataf, ~Phylum, function(x) c(median=median(x$Abundance)))
+
+#create a vector of the median abundance phylum <1%
+remainder<- medians[medians$median <= 0.0001,]$Phylum
+
+#rename anything that's in the remainder vector to Remainder
+dataf[dataf$Phylum %in% remainder | dataf$Phylum == "",]$Phylum<- 'Remainder'
+
+#rename source populations to their final figure text form 
+dataf$Sample<-as.character(dataf$Sample)
+dataf[dataf$Sample == "Mainland-2019",]$Sample<- "Mainland (2019)"
+dataf[dataf$Sample == "Mainland-2017",]$Sample<- "Mainland (2017)"
+dataf[dataf$Sample == "Island-C-2019",]$Sample<- "Island C (2019)"
+dataf[dataf$Sample == "Island-P-2019",]$Sample<- "Island P (2019)"
+
+#factor to order 
+dataf$sourcepop_f = factor(dataf$Sample, levels=c('Mainland (2017)','Mainland (2019)',
+                                                  "Island C (2019)", "Island P (2019)"))
+#Rename the Phyla for the figure 
+dataf$Phylum = factor(dataf$Phylum, levels =c("Firmicutes", "Bacteroidetes", "Verrucomicrobia", "Proteobacteria", "Actinobacteria", "Tenericutes","Spirochaetes", "Epsilonbacteraeota", "Fusobacteria", "Cyanobacteria", "Euryarchaeota", "Planctomycetes", "Acidobacteria", "Remainder"))
+
+#get the colors for the taxa from the Paired palette
+colorCount = length(unique (dataf$Phylum))
+getPalette = colorRampPalette(brewer.pal(9, "Paired"))
+
+#plot
+p2a<-ggplot(dataf,
+       aes(x=sourcepop_f,
+           y=Abundance, fill = Phylum)) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_few() +
+  scale_fill_manual(values=getPalette(colorCount)) +
+  theme(legend.position = "right") +
+  guides(fill=guide_legend(nrow=5)) +
+  xlab("Treatment group") +
+  ylab("Relative abundance") +
+theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text = element_text(size=10,family="sans")) +
+  theme(legend.title = element_text(size = 12, family="sans")) +
+  guides(fill=guide_legend(ncol=1)) +
+  scale_y_continuous( expand = c(0,0))  
+
+## Evenness plot
+#read in the metadata
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+
+# filter to relevant populations
+met.filt<-filter(metadata, metadata$sourcepop == "Mainland-2019" | metadata$sourcepop == "Mainland-2017"|
+                 metadata$sourcepop == "Island-P-2019" | metadata$sourcepop == "Island-C-2019")
+
+#make dataframe 
+met.filt.df<-as.data.frame(met.filt)
+
+#read in the evenness vector data
+evenness<-read_qza("./wild/core-metrics-results/evenness_vector.qza")$data
+
+#convert to dataframe, and rename the columns to match the metadata (so we can left join below)
+evenness.df<-as.data.frame(evenness)
+evenness.rename <- cbind(rownames(evenness.df), evenness.df)
+rownames(evenness.rename) <- NULL
+colnames(evenness.rename) <- c("SampleID","Evenness")
+
+#Rename metadata to final name 
+met.filt.df$sourcepop<-as.character(met.filt.df$sourcepop)
+met.filt.df[met.filt.df$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+met.filt.df[met.filt.df$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+met.filt.df[met.filt.df$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+met.filt.df[met.filt.df$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+#factor sourcepop into order we want for axis 
+met.filt.df$sourcepop_f = factor(met.filt.df$sourcepop, levels=c('Mainland (2017)','Mainland (2019)','',"Island C (2019)", "Island P (2019)"))
+
+#left join metadata and evenness vector by Sample ID 
+joined<-left_join(met.filt.df, evenness.rename, by= "SampleID")
+
+#the colors that I want that correspond to each treatment 
+thecolors<-c("#FB9A99", "#E31A1C","#B2DF8A","#33A02C")
+
+#plot
+p2b<- ggplot(joined, aes(y= Evenness, x=sourcepop_f, fill = sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA)  +
+  theme_few() +
+  theme(axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Treatment group") +
+  ylab("Pielous's evenness") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Treatment group") +
+  geom_signif(annotations = "*", y_position = c(0.83), xmin=c(1), xmax=c(2),  tip_length = 0, textsize = 8) +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  ylim(0, 1) +
+  scale_y_continuous(breaks = seq(0, 1, 0.25), 
+                   limits = c(0,1), 
+                   expand = c(0,0))
+# plot for unweighted UniFrac
+
+#read in metadata and pcoa, select data from pcoa file 
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+pcoa<-read_qza("./wild/core-metrics-results/unweighted_UniFrac_pcoa_results.qza")$data
+
+#create a year column where the samples are partitioned only by year 
+metadata$year<-ifelse((metadata$sourcepop=="Mainland-2017"),
+                      "2017",
+                      "2019")
+
+#rename the source population labels to their final form for the axis labels
+metadata$sourcepop<-as.character(metadata$sourcepop)
+metadata[metadata$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+metadata[metadata$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+metadata[metadata$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+metadata[metadata$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+#factor to order I want 
+metadata$sourcepop_f = factor(metadata$sourcepop, levels=c('Mainland (2017)','Mainland (2019)',
+                                                           "Island C (2019)", "Island P (2019)"))
+
+#left join the vectors and the metadata
+cwdata<-pcoa$Vectors %>%
+  left_join(metadata) 
+
+p2c<-ggplot(data = cwdata, aes(
+    x=PC1, 
+    y=PC2)) +
+  geom_point(aes(shape = sourcepop_f,
+                 color = year),
+             size = 3) +
+  stat_ellipse(aes(color = year, level = .95)) +
+  scale_color_brewer(palette = "Dark2") +
+  guides(color = FALSE,
+         shape = guide_legend(override.aes = list(color = c("#1B9E77", "#D95F02", "#D95F02", "#D95F02" )))) +
+    theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text=element_text(size=8)) + 
+  theme(legend.position = c(.85, .85),  legend.box.background = element_rect(colour = "black")) +
+  theme(legend.title=element_text(size=6))+
+  xlab(paste("Unweighted UniFrac PC1: ", (round(100*pcoa$ProportionExplained[1])), "%")) +
+  ylab(paste("Unweighted UniFrac PC2: ", (round(100*pcoa$ProportionExplained[2])), "%")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  labs(shape = "Population") +
+  scale_y_continuous(breaks = seq(-0.4, 0.4, 0.2), 
+                   limits = c(-0.4,0.4), 
+                   expand = c(0,0)) +
+  scale_x_continuous(breaks = seq(-0.5, 0.7, 0.3), 
+                   limits = c(-0.5,0.7), 
+                   expand = c(0,0))
+#relative abundance figures 
+## Make a new Phyloseq Object! 
+phy<-qiime2R::qza_to_phyloseq("./wild/feat-table-wild.qza", "rooted-tree.qza","silva-taxonomy.qza", "liz-micro-metadata.tsv")
+
+#select populations I want 
+phys_subset<-subset_samples(phy, sourcepop=="Mainland-2017" | sourcepop=="Mainland-2019" | 
+                sourcepop== "Island-P-2019" | sourcepop == "Island-C-2019")
+
+## Normalize
+phy_sourcepop_norm<-transform_sample_counts(phys_subset, function(x) x/sum(x))
+
+#agglomerate taxa at phylum level
+glom<-tax_glom(phy_sourcepop_norm, taxrank = "Phylum")
+#melt to dataframe
+dataf<- psmelt(glom)
+#convert phylum names to character vectors
+dataf$Phylum<-as.character(dataf$Phylum)
+
+#rename sourcepop names to final figure label form 
+dataf$sourcepop<-as.character(dataf$sourcepop)
+dataf[dataf$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+dataf[dataf$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+dataf[dataf$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+dataf[dataf$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+#filter for the taxa of interest (top 5)
+dataf.filtered<-filter(dataf, 
+       Phylum == "Bacteroidetes" |
+         Phylum == "Firmicutes" |
+         Phylum == "Verrucomicrobia" |
+         Phylum == "Proteobacteria" |
+         Phylum == "Actinobacteria")
+
+#factor to order I want 
+dataf.filtered$sourcepop_f = factor(dataf.filtered$sourcepop, levels=c('Mainland (2017)','Mainland (2019)','',"Island C (2019)", "Island P (2019)"))
+
+#assign the colors that correspond to each source population 
+thecolors<-c("#FB9A99", "#E31A1C","#B2DF8A","#33A02C")
+
+
+#filter to contain only the taxa of interest for t test
+actino<-filter(dataf.filtered, Phylum == "Actinobacteria")
+verru<-filter(dataf.filtered, Phylum == "Verrucomicrobia")
+bac<-filter(dataf.filtered, Phylum == "Bacteroidetes")
+prot<-filter(dataf.filtered, Phylum == "Proteobacteria")
+firm<-filter(dataf.filtered, Phylum == "Firmicutes")
+
+
+p2dact<-ggplot(actino, aes(x = actino$sourcepop_f, y = Abundance, fill = actino$sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_few() +
+   theme(axis.text.x= element_text(family="sans",size=10,face = "bold", angle = 45,  vjust = 1, hjust=1),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold"),
+                axis.ticks.y = element_blank()) +
+  theme(legend.position = "none") +
+  xlab(element_blank()) +
+  ylab("Relative abundance") +
+    theme(axis.title=element_blank()) +
+    theme(axis.text.y= element_blank()) +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Population") +
+  geom_signif(annotations = "*", y_position = c(0.6), xmin=c(1), xmax=c(4),  tip_length = 0, textsize = 8) +
+  geom_signif(comparisons = list(c("Mainland (2017)", "Mainland (2019)"), 
+                                 c("Mainland (2017)", "Island C (2019)")), test = "wilcox.test", 
+              map_signif_level = TRUE, 
+              y_position = c(0.3, 0.45),
+              tip_length = 0, textsize = 8) +
+  ggtitle("Actinobacteria") +
+  ylim(0, 1)
+
+p2dverr<-ggplot(verru, aes(x = verru$sourcepop_f, y = Abundance, fill = verru$sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_few() +
+   theme(axis.text.x= element_text(family="sans",size=10,face = "bold", angle = 45,  vjust = 1, hjust=1),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        axis.ticks.y = element_blank(),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_blank()) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_blank()) +
+  theme(legend.position = "none") +
+  xlab(element_blank()) +
+  ylab("Relative abundance") +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Population") +
+  ggtitle("Verrucomicrobia") +
+  ylim(0, 1)
+
+
+p2dbac<-ggplot(bac, aes(x = bac$sourcepop_f, y = Abundance, fill = bac$sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_few() +
+   theme(axis.text.x= element_text(family="sans",size=10,face = "bold", angle = 45,  vjust = 1, hjust=1),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        axis.ticks.y = element_blank(),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_blank()) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_blank()) +
+  theme(legend.position = "none") +
+  xlab(element_blank()) +
+  ylab("Relative abundance") +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Population") +
+  geom_signif(annotations = "*", y_position = c(0.8), xmin=c(1), xmax=c(2),  tip_length = 0, textsize = 8) +
+  ggtitle("Bacteriodetes") +
+  ylim(0, 1)
+
+p2dprot<-ggplot(prot, aes(x = prot$sourcepop_f, y = Abundance, fill = prot$sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_few() +
+   theme(axis.text.x= element_text(family="sans",size=10,face = "bold", angle = 45,  vjust = 1, hjust=1),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        axis.ticks.y = element_blank(),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_blank()) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_blank()) +
+  theme(legend.position = "none") +
+  xlab(element_blank()) +
+  ylab("Relative abundance") +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Population") +
+  ggtitle("Proteobacteria")+
+  ylim(0, 1)
+
+p2dfirm<-ggplot(firm, aes(x = firm$sourcepop_f, y = Abundance, fill = firm$sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_few() +
+   theme(axis.text.x= element_text(family="sans",size=10,face = "bold", angle = 45,  vjust = 1, hjust=1),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+    theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(axis.title.x=element_blank()) +
+  theme(legend.position = "none") +
+  xlab(element_blank()) +
+  ylab("Relative abundance") +
+    theme(axis.title=element_text(size=12, family= "sans",face = "bold"),
+                axis.ticks.y = element_blank()) +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Population") +
+  ggtitle("Firmicutes")+
+  ylim(0, 1)
+
+
+p2d<-plot_grid(p2dfirm, p2dbac, p2dverr, p2dprot, p2dact,  nrow = 1, rel_widths = c(1, .8, .8, .8, .8), align = "h", axis = "bt")
+
+#pairwise tests in each phyla
+pairwise.wilcox.test(actino$Abundance, actino$sourcepop, p.adjust.method = "bonferroni")
+pairwise.wilcox.test(verru$Abundance, verru$sourcepop, p.adjust.method = "bonferroni")
+pairwise.wilcox.test(bac$Abundance, bac$sourcepop, p.adjust.method = "bonferroni")
+pairwise.wilcox.test(prot$Abundance, prot$sourcepop, p.adjust.method = "bonferroni")
+pairwise.wilcox.test(firm$Abundance, firm$sourcepop, p.adjust.method = "bonferroni")
+
+
+#plot the first plot on the top row
+top_row<-plot_grid( p2a, labels= c('A'), label_size = 18)
+
+mid_row<- plot_grid(p2d, labels = c('B'), label_size = 18)
+#plot the second two plots on the bottom row
+bottom_row <- plot_grid(p2b, p2c, labels = c('C', 'D'),  align = "h", axis = "bt", rel_widths = c(1,0.9), label_size = 18)
+
+#add title
+title <- ggdraw() + 
+  draw_label(
+    "Figure 4",
+    fontface = 'bold',
+    x = 0,
+    hjust = .5,
+    size = 18
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 40)
+  )
+  
+#plot the title, then top row, bottom row. 
+Fig3<-plot_grid(
+  top_row, mid_row, bottom_row,
+  ncol = 1,
+  nrow = 3,
+  # rel_heights values control vertical title margins
+  rel_heights = c(1,1,1), align = "h", rel_widths = c(.5, 1, 1)
+)
+
+Fig3
+
+ggsave("Figure4.png", height = 12, width =10)
+```
+
+
+```{r Figure 5, warning=FALSE, message=FALSE, fig.height= 4.6, fig.width= 5}
+
+## Make a new Phyloseq Object! 
+phy<-qiime2R::qza_to_phyloseq("final_feature_table.qza", 
+                              "rooted-tree.qza",
+                              "silva-taxonomy.qza", 
+                              "liz-micro-metadata.tsv")
+
+phy.glom<-tax_glom(phy, taxrank= 'Phylum')
+phy.norm<-transform_sample_counts(phy.glom, function(x) 100 * x/sum(x))
+
+## subset samples of interest
+phys_subset<-subset_samples(phy, sourcepop=="Climate-Chamber-Heat" | sourcepop=="Climate-Chamber-Control")
+
+##Merge Samples by Source Population
+phy_sourcepop<-merge_samples(phys_subset, "sourcepop")
+
+## Normalize
+phy_sourcepop_norm<-transform_sample_counts(phy_sourcepop, function(x) x/sum(x))
+
+# Agglomerate taxa at the phylum level
+glom<-tax_glom(phy_sourcepop_norm, taxrank= 'Phylum')
+
+#melt -> dataframe
+dataf<- psmelt(glom)
+
+#convert Phlyum names to character vector
+dataf$Phylum<-as.character(dataf$Phylum)
+
+#find the median abundance of each phylum 
+medians<-ddply(dataf, ~Phylum, function(x) c(median=median(x$Abundance)))
+
+#create a vector of the median abundance phylum <1%
+remainder<- medians[medians$median <= 0.0001,]$Phylum
+
+#rename anything that's in the remainder vector to Remainder
+dataf[dataf$Phylum %in% remainder | dataf$Phylum == "",]$Phylum<- 'Remainder'
+
+#rename source populations to their final figure text form 
+dataf$Sample<-as.character(dataf$Sample)
+dataf[dataf$Sample == "Climate-Chamber-Heat",]$Sample<- "Warm greenhouse"
+dataf[dataf$Sample == "Climate-Chamber-Control",]$Sample<- "Control greenhouse"
+
+#factor to order 
+dataf$sourcepop_f = factor(dataf$Sample, levels=c('Control greenhouse','Warm greenhouse'))
+
+# rename the phyla and reorder 
+dataf$Phylum = factor(dataf$Phylum, levels =c( "Bacteroidetes", "Firmicutes", 
+                                               "Proteobacteria",  "Verrucomicrobia", 
+                                               "Tenericutes", "Actinobacteria", 
+                                               "Spirochaetes", "Fusobacteria",
+                                               "Epsilonbacteraeota", "Excavata", 
+                                               "Euryarchaeota",  "Cyanobacteria", 
+                                               "Elusimicrobia", "Remainder"))
+
+#get the colors for the taxa from the Paired palette
+colorCount = length(unique (dataf$Phylum))
+getPalette = colorRampPalette(brewer.pal(9, "Paired"))
+
+#plot
+p3a<-ggplot(dataf,
+       aes(x=sourcepop_f,
+           y=Abundance, fill = Phylum)) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_few() +
+  scale_fill_manual(values=getPalette(colorCount)) +
+  theme(legend.position = "right") +
+  guides(fill=guide_legend(nrow=5)) +
+  xlab("Sample") +
+  ylab("Relative abundance") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+      panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text = element_text(size=10,family="sans")) +
+  theme(legend.title = element_text(size = 12, family="sans")) +
+  guides(fill=guide_legend(ncol=1)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.25), 
+                   limits = c(0,1), 
+                   expand = c(0,0))
+
+## Evenness plot
+#read in the metadata
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+
+# filter to relevant populations
+met.filt<-filter(metadata, sourcepop=="Climate-Chamber-Heat" | sourcepop=="Climate-Chamber-Control")
+
+#make dataframe 
+met.filt.df<-as.data.frame(met.filt)
+
+#read in the evenness vector data
+evenness<-read_qza("./climate-chamber/core-metrics-results/evenness_vector.qza")$data
+
+#convert to dataframe, and rename the columns to match the metadata (so we can left join below)
+evenness.df<-as.data.frame(evenness)
+evenness.rename <- cbind(rownames(evenness.df), evenness.df)
+rownames(evenness.rename) <- NULL
+colnames(evenness.rename) <- c("SampleID","Evenness")
+
+#Rename metadata to final name 
+met.filt.df$sourcepop<-as.character(met.filt.df$sourcepop)
+met.filt.df[met.filt.df$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+met.filt.df[met.filt.df$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+
+#factor sourcepop into order we want for axis 
+met.filt.df$sourcepop_f = factor(met.filt.df$sourcepop, levels=c('Control greenhouse','Warm greenhouse'))
+
+#left join metadata and evenness vector by Sample ID 
+joined<-left_join(met.filt.df, evenness.rename, by= "SampleID")
+
+#the colors that I want that correspond to each treatment 
+thecolors<-c("#A6CEE3", "#1F78B4")
+
+#plot
+p3b<- ggplot(joined, aes(y= Evenness, x=sourcepop_f, fill = sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA)  +
+  theme_few() +
+theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Source population") +
+  ylab("Pielous's evenness") +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Population") +
+  geom_signif(comparisons = list(c("Mainland (2017)", "Mainland (2019)")), map_signif_level = TRUE, test = "wilcox.test", tip_length = 0, y_position = 0.82)+
+  theme(panel.border = element_blank(), axis.line = element_line())  +
+  scale_y_continuous(breaks = seq(0, 1, 0.25), 
+                   limits = c(0,1), 
+                   expand = c(0,0))
+
+
+
+# plot for Unweighted UniFrac
+
+#read in metadata and pcoa, select data from pcoa file 
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+pcoa<-read_qza("./before-after-climate-chamber/core-metrics-results/unweighted_UniFrac_pcoa_results.qza")$data
+
+#filter to experimental groups of interest
+met.filt<-filter(metadata, sourcepop=="Climate-Chamber-Heat" | 
+                   sourcepop=="Climate-Chamber-Control" | sourcepop == "Mainland-2019")
+
+#rename the source population labels to their final form for the axis labels
+met.filt$sourcepop<-as.character(met.filt$sourcepop)
+met.filt[met.filt$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+met.filt[met.filt$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+met.filt[met.filt$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+
+#factor to order I want 
+met.filt$sourcepop_f = factor(met.filt$sourcepop, levels=c('Mainland (2019)','Control greenhouse','Warm greenhouse'))
+met.filt$captive_free = ifelse(met.filt$sourcepop == 'Mainland (2019)', "Wild", "Captive" )
+#plot (left join metadata & pcoa first)
+p3c<-pcoa$Vectors %>%
+  left_join(met.filt) %>%
+ggplot(aes(
+      x=PC1, 
+      y=PC2)) +
+  geom_point(aes(shape = sourcepop_f, color = captive_free), size= 3) +
+    scale_color_manual(values = c( '#6A3D9A','#f0da37'))+
+  guides(color = FALSE,
+         shape = guide_legend(override.aes = list(color = c('#f0da37', '#6A3D9A', '#6A3D9A')))) +
+  labs( shape = "Population") +
+  theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text=element_text(size=12)) +
+  theme(legend.title=element_text(size=12))+
+  stat_ellipse(aes(color = captive_free, level = 0.95)) +
+  xlab(paste("Unweighted UniFrac PC1:", (round(100*pcoa$ProportionExplained[1])), "%")) +
+  ylab(paste("Unweighted UniFrac PC2:", (round(100*pcoa$ProportionExplained[2])), "%")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  scale_y_continuous(breaks = seq(-0.4, 0.4, 0.2), 
+                   limits = c(-0.4,0.4), 
+                   expand = c(0,0)) +
+  scale_x_continuous(breaks = seq(-0.6, 0.6, 0.3), 
+                   limits = c(-0.6,0.6), 
+                   expand = c(0,0))
+
+#plot the row
+top_row<-plot_grid(nrow = 1, ncol = 1, p3a, labels= c('A'),label_size = 18)
+bottom_row<-plot_grid(nrow = 1, ncol = 2, p3b, p3c, labels= c('B', 'C'), rel_widths = c(1,1.75),label_size = 18)
+
+
+#plot the second two plots on the bottom row
+
+#add title
+title <- ggdraw() + 
+  draw_label(
+    "Figure 5",
+    fontface = 'bold',
+    x = 0,
+    hjust = .5, 
+    size = 18
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 40)
+  )
+  
+#plot the title, then top row, bottom row. 
+plot_grid(top_row, bottom_row,
+  ncol = 1,
+  nrow = 2,
+  # rel_heights values control vertical title margins
+  rel_heights = c(4,2), align = "h"
+)
+
+ggsave("Figure5.png", width = 10, height = 12)
+```
+
+```{r Extra Colors}
+
+#additional colors I might want to use in the taxa plot. 
+
+#get the colors for the taxa from the Paired palette
+colorCount = length(unique (dataf$Family))
+getPalette =  palette(rainbow(colorCount))     # six color rainbow
+
+colors<-c(
+"#99afb6",
+"#eafff2",
+"#c2a5a2",
+"#f4e7ff",
+"#cffdff",
+"#8db4a4",
+"#85b3c2",
+"#c5a590",
+"#a0b193",
+"#ffe3c7",
+"#c6a1b8",
+"#bbe5ff",
+"#d8daff",
+"#ffccd3",
+"#fcffd7",
+"#dcffdc",
+"#ffc8b2",
+"#ffcef0",
+"#b3a4d4",
+"#9af4ff",
+"#63b6d2",
+"#daffce",
+"#ffb5b2",
+"#ebaaca",
+"#a5bd89",
+"#ffe6b0",
+"#98baee",
+"#d99e82",
+"#a9f1d2",
+"#c4e2ad",
+"#5cbfc3",
+"#dba883",
+"#61c4d5",
+"#ddacd9",
+"#eec095",
+"#83d7c4",
+"#85e3fc",
+"#86c9f5",
+"#93f1ea")
+
+
+```
+
+```{r Figure 3}
+
+# Need to import the exported final data frame from the Kegg Processing Script. 
+
+all<-read.csv("Top10FunctionsKegg.csv")
+all<-all[, c(7,2, 3, 4, 5, 6, 8)]
+names(all)[1]<-"SampleID"
+metadata<-read_tsv("liz-micro-metadata.tsv")
+metadata<-metadata[-1,]
+names(metadata)[1]<-"SampleID"
+all_with_sourcepop<-left_join(all,metadata)
+all_with_sourcepop$HeadingTwo<-ifelse(all_with_sourcepop$HeadingTwo == "multiple",  "Multiple categories",  all_with_sourcepop$HeadingTwo)
+all_with_sourcepop$HeadingTwo<-ifelse(all_with_sourcepop$HeadingTwo == "Nucleotide Metabolism",  "Nucleotide metabolism",  all_with_sourcepop$HeadingTwo)
+
+climate<-filter(all_with_sourcepop, sourcepop == "Climate-Chamber-Heat" | 
+                  sourcepop == "Climate-Chamber-Control" )
+
+climate[climate$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+climate[climate$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+
+climate$sourcepop_f = factor(climate$sourcepop, levels=c('Control greenhouse','Warm greenhouse'))
+
+climate$functionalgroup_f<- factor(climate$HeadingTwo, 
+                                           levels=c("Signal transduction", "Lipid metabolism",
+                                                      "Energy metabolism", "Nucleotide metabolism",
+                                                      "Replication and Repair ",
+                                                      "Membrane transport ",  "Carbohydrate metabolism", 
+                                                      "Amino acid metabolism ",
+                                                      "Metabolism of cofactors and vitamins", "Translation",
+                                                      "Multiple categories"))
+                             
+wild<-filter(all_with_sourcepop, sourcepop == "Island-P-2019" | 
+                  sourcepop == "Island-C-2019" |
+               sourcepop == "Mainland-2019" |
+               sourcepop == "Mainland-2017")
+
+wild[wild$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+wild[wild$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+wild[wild$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+wild[wild$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+wild$functionalgroup_f<- factor(wild$HeadingTwo, 
+                                             levels=c("Signal transduction", "Lipid metabolism",
+                                                      "Energy metabolism", "Nucleotide metabolism",
+                                                      "Replication and Repair ",
+                                                      "Membrane transport ",  "Carbohydrate metabolism", 
+                                                      "Amino acid metabolism ",
+                                                      "Metabolism of cofactors and vitamins", "Translation",
+                                                      "Multiple categories"))
+
+
+wild$sourcepop_f = factor(wild$sourcepop, levels=c('Mainland (2017)','Mainland (2019)',"Island C (2019)", "Island P (2019)"))
+
+# get enough colors for all of the functional groups. 
+colorCount = length(unique(climate$HeadingTwo))
+getPalette = colorRampPalette(brewer.pal(9, "Paired"))
+
+p1<-ggplot(climate, 
+       aes(x = SampleID, y = abundance, group = functionalgroup_f, fill = functionalgroup_f)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_grid(~sourcepop_f, scales = "free", space = "free", labeller = label_wrap_gen(width=10)) +
+  scale_fill_manual(values=getPalette(colorCount))+
+  theme_few() +
+  theme(legend.position = "right") +
+  xlab("Sample") +
+  ylab("Relative abundance") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold", vjust = 3)) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text = element_text(size=9,family="sans")) +
+  guides(colour = guide_legend(override.aes = list(size=1))) +
+  theme(legend.title = element_text(size = 12, family="sans")) +
+  guides(fill=guide_legend(ncol=1)) +  
+  theme(axis.text.x=element_blank()) +
+  ggtitle("Greenhouse Experiment") +
+  theme(plot.title = element_text("sans", 'bold', 'black', 14)) +
+ guides(fill=guide_legend(title="KEGG Functional Group")) +
+  scale_y_continuous( expand = c(0,0))  
+
+
+
+# here we plot the wild relative abundance composition plot.
+p2<-ggplot(wild, 
+       aes(x = SampleID, y = abundance, group = functionalgroup_f, fill = functionalgroup_f)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_grid(~sourcepop_f, scales = "free", space = "free", labeller = label_wrap_gen(width=10)) +
+  scale_fill_manual(values=getPalette(colorCount)) +
+  theme_few() +
+  theme(legend.position = "none") +
+  guides(fill=guide_legend(nrow=5)) +
+  xlab("Sample") +
+  ylab("Relative abundance") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5,  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text = element_text(size=10,family="sans")) +
+  theme(legend.title = element_text(size = 12, family="sans")) +
+  guides(fill=guide_legend(ncol=3)) +
+  theme(axis.text.x = element_blank()) +
+  ggtitle("Field Transplant Experiment") +
+  theme(plot.title = element_text("sans", 'bold', 'black',  14 )) +
+  guides(fill=guide_legend(title="KEGG Functional Group"))  +
+  scale_y_continuous( expand = c(0,0))  
+
+
+
+row1<-plot_grid(p2, p1, ncol = 2, labels = c('A', 'B'),label_size = 24)
+#Add the title
+title <- ggdraw() + 
+  draw_label(
+    "Figure 3",
+    fontface = 'bold',
+    x = 0,
+    hjust = .5,
+    size = 18
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0,  40)
+  )
+
+
+#Plot the title above the row of plots.  
+F3<-plot_grid( row1,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(1.5))
+
+ggsave("Figure3.png", width = 14, height = 6)
+```
+
+
+```{r Figure 6}
+
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+
+# filter to relevant populations
+met.filt<-filter(metadata, sourcepop=="Climate-Chamber-Heat" | sourcepop=="Climate-Chamber-Control")
+
+#make dataframe 
+met.filt.df<-as.data.frame(met.filt)
+
+#read in the evenness vector data
+evenness<-read_qza("climate-chamber/core-metrics-results-KEGG/evenness_vector.qza")$data
+
+#convert to dataframe, and rename the columns to match the metadata (so we can left join below)
+evenness.df<-as.data.frame(evenness)
+evenness.rename <- cbind(rownames(evenness.df), evenness.df)
+rownames(evenness.rename) <- NULL
+colnames(evenness.rename) <- c("SampleID","Evenness")
+
+#Rename metadata to final name 
+met.filt.df$sourcepop<-as.character(met.filt.df$sourcepop)
+met.filt.df[met.filt.df$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+met.filt.df[met.filt.df$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+
+#factor sourcepop into order we want for axis 
+met.filt.df$sourcepop_f = factor(met.filt.df$sourcepop, levels=c('Control greenhouse','Warm greenhouse'))
+
+#left join metadata and evenness vector by Sample ID 
+joined<-left_join(met.filt.df, evenness.rename, by= "SampleID")
+
+#the colors that I want that correspond to each treatment 
+thecolors<-c("#A6CEE3", "#1F78B4")
+
+#plot
+p3b<- ggplot(joined, aes(y= Evenness, x=sourcepop_f, fill = sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA)  +
+  theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Treatment group") +
+  ylab("Pielous's evenness") +
+  scale_fill_manual(values=thecolors) +
+  labs(fill = "Treatment Group") +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  scale_y_continuous(breaks = seq(0.8, 0.92, 0.03), 
+                   limits = c(0.8, 0.92), 
+                   expand = c(0,0)) 
+
+## Evenness plot for the wild stuff 
+#read in the metadata
+metadata1<-read_q2metadata("liz-micro-metadata.tsv")
+# filter to relevant populations
+met.filt1<-filter(metadata1, metadata1$sourcepop == "Mainland-2019" | metadata1$sourcepop == "Mainland-2017"|
+                   metadata1$sourcepop == "Island-P-2019" | metadata1$sourcepop == "Island-C-2019")
+
+#make dataframe 
+met.filt.df1<-as.data.frame(met.filt1)
+
+#read in the evenness vector data
+evenness1<-read_qza("wild/core-metrics-results-KEGG/evenness_vector.qza")$data
+
+#convert to dataframe, and rename the columns to match the metadata (so we can left join below)
+evenness.df1<-as.data.frame(evenness1)
+evenness.rename1 <- cbind(rownames(evenness.df1), evenness.df1)
+rownames(evenness.rename1) <- NULL
+colnames(evenness.rename1) <- c("SampleID","Evenness")
+
+#Rename metadata to final name 
+met.filt.df1$sourcepop<-as.character(met.filt.df1$sourcepop)
+met.filt.df1[met.filt.df1$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+met.filt.df1[met.filt.df1$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+met.filt.df1[met.filt.df1$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+met.filt.df1[met.filt.df1$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+#factor sourcepop into order we want for axis 
+met.filt.df1$sourcepop_f = factor(met.filt.df1$sourcepop, levels=c('Mainland (2017)','Mainland (2019)','',"Island C (2019)", "Island P (2019)"))
+
+#left join metadata and evenness vector by Sample ID 
+joined1<-left_join(met.filt.df1, evenness.rename1, by= "SampleID")
+
+#the colors that I want that correspond to each treatment 
+thecolors1<-c("#FB9A99", "#E31A1C","#B2DF8A","#33A02C")
+
+#plot
+p2b<- ggplot(joined1, aes(y= Evenness, x=sourcepop_f, fill = sourcepop_f)) +
+  geom_boxplot(outlier.shape = NA)  +
+  theme_few() +
+  theme(
+    axis.ticks = element_line(colour = "black", size = 1.2,),
+    strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Treatment group") +
+  ylab("Pielous's evenness") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  scale_fill_manual(values=thecolors1) +
+  labs(fill = "Treatment Group") +
+  geom_signif(comparisons = list(c("Mainland (2017)", "Mainland (2019)")), map_signif_level = TRUE, test = "wilcox.test", tip_length = 0,  textsize = 8, y_position = 0.90 )+
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  scale_y_continuous(breaks = seq(0.8, 0.92, 0.03), 
+                   limits = c(0.8, 0.92), 
+                   expand = c(0,0))
+
+
+
+# plot for bray curtis wild
+
+#read in metadata and pcoa, select data from pcoa file 
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+pcoa<-read_qza("wild/core-metrics-results-KEGG/bray_curtis_pcoa_results.qza")$data
+
+#create a year column where the samples are partitioned only by year 
+metadata$year<-ifelse((metadata$sourcepop=="Mainland-2017"),
+                      "2017",
+                      "2019")
+
+#rename the source population labels to their final form for the axis labels
+metadata$sourcepop<-as.character(metadata$sourcepop)
+metadata[metadata$sourcepop == "Mainland-2019",]$sourcepop<- "Mainland (2019)"
+metadata[metadata$sourcepop == "Mainland-2017",]$sourcepop<- "Mainland (2017)"
+metadata[metadata$sourcepop == "Island-C-2019",]$sourcepop<- "Island C (2019)"
+metadata[metadata$sourcepop == "Island-P-2019",]$sourcepop<- "Island P (2019)"
+
+#factor to order I want 
+metadata$sourcepop_f = factor(metadata$sourcepop, levels=c('Mainland (2017)','Mainland (2019)','',"Island C (2019)", "Island P (2019)"))
+
+#plot (left join metadata & pcoa first)
+p2c<-pcoa$Vectors %>%
+  left_join(metadata) %>%
+  ggplot(aes(
+    x=PC1, 
+    y=PC2)) +
+  geom_point(aes(shape = sourcepop_f, color = year), size= 3) +
+  labs(color= "Year", shape = "Treatment Group") +
+  stat_ellipse(aes(color = year, level = 0.95)) +
+  scale_color_brewer(palette = "Dark2") +
+  guides(color = FALSE,
+         shape = guide_legend(override.aes = list(color = c("#1B9E77", "#D95F02", "#D95F02", "#D95F02" )))) +
+  theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text=element_text(size=12)) +
+  theme(legend.position = c(.2, .8),legend.box.background = element_rect(colour = "black")) +
+  theme(legend.title=element_text(size=12))+
+  xlab(paste("Bray Curtis PC1: ", (round(100*pcoa$ProportionExplained[1])), "%")) +
+  ylab(paste("Bray Curtis PC2: ", (round(100*pcoa$ProportionExplained[2])), "%")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(panel.border = element_blank(), axis.line = element_line())  +
+  scale_x_continuous(breaks = seq(-0.3, 0.3, 0.15), 
+                   limits = c(-0.3, 0.3), 
+                   expand = c(0,0)) +
+  scale_y_continuous(breaks = seq(-0.2, 0.44, 0.16), 
+                   limits = c(-0.2, 0.44), 
+                   expand = c(0,0)) 
+
+
+# plot for bray curtis climate 
+
+#read in metadata and pcoa, select data from pcoa file 
+metadata<-read_q2metadata("liz-micro-metadata.tsv")
+pcoa<-read_qza("climate-chamber/core-metrics-results-KEGG/bray_curtis_pcoa_results.qza")$data
+
+met.filt<-filter(metadata, sourcepop=="Climate-Chamber-Heat" | sourcepop=="Climate-Chamber-Control")
+
+#rename the source population labels to their final form for the axis labels
+met.filt$sourcepop<-as.character(met.filt$sourcepop)
+met.filt[met.filt$sourcepop == "Climate-Chamber-Heat",]$sourcepop<- "Warm greenhouse"
+met.filt[met.filt$sourcepop == "Climate-Chamber-Control",]$sourcepop<- "Control greenhouse"
+
+#factor to order I want 
+met.filt$sourcepop_f = factor(met.filt$sourcepop, levels=c('Control greenhouse','Warm greenhouse'))
+#plot (left join metadata & pcoa first)
+p3c<-pcoa$Vectors %>%
+  left_join(met.filt) %>%
+  ggplot(aes(
+    x=PC1, 
+    y=PC2)) +
+  geom_point(aes(color = sourcepop_f), size= 3) +
+  stat_ellipse(aes(color = sourcepop_f, level = 0.95)) +
+  labs(shape = "Population") +
+  theme_few() +
+  labs(color= "Treament Group") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.text=element_text(size=12)) +
+  theme(legend.title=element_text(size=12)) +
+  xlab(paste("Bray Curtis PC1: ", (round(100*pcoa$ProportionExplained[1])), "%")) +
+  ylab(paste("Bray Curtis PC2: ", (round(100*pcoa$ProportionExplained[2])), "%")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4")) +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  theme(legend.position = c(.8, .8), legend.box.background = element_rect(colour = "black")) +
+  scale_x_continuous(breaks = seq(-0.2, 0.6, 0.2), 
+                   limits = c(-0.2, 0.6), 
+                   expand = c(0,0)) +
+  scale_y_continuous(breaks = seq(-0.2, 0.2, 0.1), 
+                   limits = c(-0.2, 0.2), 
+                   expand = c(0,0)) 
+  
+#Figure 6
+#plot the jaccard 
+#plot the evennness
+#plot the bray curtis
+
+
+plotrowX<-plot_grid(p2b, p3b, labels = c('A', 'B'), label_size = 22)
+plotrowY<-plot_grid(p2c, p3c, labels = c('C', 'D'), label_size = 22)
+
+
+#Add the title
+title <- ggdraw() + 
+  draw_label(
+    "Figure 6",
+    fontface = 'bold',
+    x = 0,
+    hjust = .5,
+    size = 18
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0,  40)
+  )
+
+
+#Plot the title above the row of plots.  
+plot_grid(
+ plotrowX, plotrowY,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(1, 1)
+)
+
+
+ggsave("Figure6.png", width = 12, height = 11)
+```
+
+

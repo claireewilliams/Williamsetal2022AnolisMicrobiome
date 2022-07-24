@@ -1,0 +1,605 @@
+QIIME Workflow Lizard Microbiome Data
+Claire Williams
+
+#Importing Paired-End Demultiplexed Data (Casava 18)  
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path reads\
+  --input-format CasavaOneEightSingleLanePerSampleDirFmt \
+  --output-path demux-paired-end.qza
+  
+# Summarise the reads
+qiime demux summarize \
+--i-data demux-paired-end.qza \
+--o-visualization demux-paired-end.qzv \
+
+# Dada2 Quality Filtering/Deblurring
+# (and removing primers) 
+ qiime dada2 denoise-paired \
+	--i-demultiplexed-seqs demux-paired-end.qza \
+	--p-trim-left-f 25 \
+	--p-trim-left-r 25 \
+	--p-trunc-len-f 240 \
+	--p-trunc-len-r 220 \
+	--o-representative-sequences rep-seqs-dada2.qza \
+	--o-table pet-table.qza \
+	--o-denoising-stats denoising-stats.qza \
+	--p-n-threads 0
+
+# Visualize the Dada2 output
+qiime feature-table summarize \
+  --i-table pet-table.qza \
+  --o-visualization visualize-pet-table.qzv \
+  --m-sample-metadata-file liz-micro-metadata.tsv \
+
+qiime feature-table tabulate-seqs \
+  --i-data rep-seqs-dada2.qza \
+  --o-visualization rep-seqs.qzv
+
+# Building a phylogenetic tree for diversity stats
+qiime alignment mafft \
+--i-sequences rep-seqs-dada2.qza \ 
+--o-alignment aligned-rep-seqs.qza
+
+#mask (or filter) the alignment to remove positions that are highly variable. These positions are generally considered to add noise to a resulting phylogenetic tree.
+qiime alignment mask \
+	--i-alignment aligned-rep-seqs.qza \
+	 --o-masked-alignment masked-aligned-rep-seqs.qza
+
+#create the tree using the Fasttree program
+qiime phylogeny fasttree \
+ --i-alignment masked-aligned-rep-seqs.qza \
+ --o-tree unrooted-tree.qza
+
+#root the tree using the longest root
+qiime phylogeny midpoint-root \
+ --i-tree unrooted-tree.qza \
+ --o-rooted-tree rooted-tree.qza
+ 
+# assigning taxonomy 
+qiime feature-classifier classify-sklearn \
+  --i-classifier silva-132-99-nb-classifier.qza \
+  --i-reads rep-seqs-dada2.qza \
+  --o-classification silva-taxonomy.qza \
+  --p-n-jobs -2
+	
+# Visualize Taxonomy
+qiime metadata tabulate \
+  --m-input-file silva-taxonomy.qza \
+  --o-visualization silva-taxonomy.qzv
+  
+# remove contaminants based on decontam script
+qiime feature-table filter-features \
+ --i-table pet-table.qza \
+ --m-metadata-file features-to-discard.txt \
+ --p-exclude-ids \
+ --o-filtered-table contam-asvs-removed-pet-table.qza
+
+# remove mitochondria, chloroplasts
+qiime taxa filter-table \
+  --i-table contam-asvs-removed-pet-table.qza \
+  --i-taxonomy silva-taxonomy.qza \
+  --p-exclude mitochondria,chloroplast \
+  --o-filtered-table contam-mito-chloro-removed-pet-table.qza
+
+# visualize table  
+qiime feature-table summarize \
+  --i-table contam-mito-chloro-removed-pet-table.qza \
+  --o-visualization contam-mito-chloro-removed-pet-table.qzv \
+  --m-sample-metadata-file liz-micro-metadata.tsv \
+
+# remove anything that doesn't at least have a phylum
+qiime taxa filter-table \
+    --i-table contam-mito-chloro-removed-pet-table.qza \
+    --i-taxonomy silva-taxonomy.qza \
+    --p-include D_1__ \
+    --o-filtered-table only-phyla-table.qza
+
+# Summarize the only phyla table. 
+qiime feature-table summarize \
+  --i-table only-phyla-table.qza \
+  --o-visualization only-phyla-table.qzv \
+  --m-sample-metadata-file liz-micro-metadata.tsv \
+  
+# this is the final, clean table:  controls-removed-pet-table.qza
+qiime feature-table filter-samples \
+--i-table only-phyla-table.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Climate-Chamber-Control', 'Climate-Chamber-Heat', 'Mainland-2017', 'Mainland-2019', 'Island-P-2019', 'Island-C-2019')" \
+--o-filtered-table controls-removed-pet-table.qza
+ 
+# Summarize the only phyla table. 
+qiime feature-table summarize \
+  --i-table final_feature_table.qza\
+  --o-visualization final_feature_table.qzv \
+  --m-sample-metadata-file liz-micro-metadata.tsv 
+   
+#visualize sequencing depth alpha rarefaction
+qiime diversity alpha-rarefaction \
+  --i-table controls-removed-pet-table.qza \
+  --i-phylogeny rooted-tree.qza \
+  --p-max-depth 30000 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --o-visualization alpha-rarefaction.qzv
+
+# rarefy feature table for diversity stats only. 
+qiime feature-table rarefy \
+--i-table controls-removed-pet-table.qza \
+--p-sampling-depth 18979 \
+--o-rarefied-table rarefied_table.qza
+
+# Summarize the rarefied table. 
+qiime feature-table summarize \
+  --i-table rarefied_table.qza \
+  --o-visualization rarefied_table.qzv \
+  --m-sample-metadata-file liz-micro-metadata.tsv 
+   
+# renamed: 
+# raw before filtering: raw_feature_table.qza
+# filtered table: final_feature_table.qza
+# rarefied table: final_feature_table_rarefied.qza 
+  
+# subset data into categories: 
+
+# climate chamber hot + control
+Qiime feature-table filter-samples \
+--i-table final_feature_table_rarefied.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Climate-Chamber-Control', 'Climate-Chamber-Heat')" \
+--o-filtered-table ./climate-chamber/feat-table-climate-chamber.qza
+
+# before and after the climate chamber (2019 ML, hot, control)
+Qiime feature-table filter-samples \
+--i-table final_feature_table_rarefied.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Mainland-2019', 'Climate-Chamber-Heat', 'Climate-Chamber-Control')" \
+--o-filtered-table ./before-after-climate-chamber/feat-table-climate-chamber.qza
+
+# wild lizards only (2017 ML, 2019 ML, 2019 Islands)
+Qiime feature-table filter-samples \
+--i-table final_feature_table_rarefied.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Island-C-2019', 'Island-P-2019', 'Mainland-2019', 'Mainland-2017')" \
+--o-filtered-table ./wild/feat-table-wild.qza
+  
+# mainland samples only (2017 + 2019)
+Qiime feature-table filter-samples \
+--i-table final_feature_table_rarefied.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Mainland-2019', 'Mainland-2017')" \
+--o-filtered-table ./mainland/rarefied-feat-table-mainland.qza
+
+# mainland/islands (2019)
+Qiime feature-table filter-samples \
+--i-table final_feature_table_rarefied.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Mainland-2019', 'Island-P-2019', 'Island-C-2019')" \
+--o-filtered-table ./2019/feat-table-2019.qza
+
+# run core metrics for each of these.
+
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table ./climate-chamber/feat-table-climate-chamber.qza \
+  --p-sampling-depth 18979 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --output-dir ./climate-chamber/core-metrics-results
+
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table ./2019/feat-table-2019.qza \
+  --p-sampling-depth 18979 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --output-dir ./2019/core-metrics-results
+  
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table ./before-after-climate-chamber/feat-table-ba-climate-chamber.qza \
+  --p-sampling-depth 18979 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --output-dir ./before-after-climate-chamber/core-metrics-results
+  
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table ./wild/feat-table-wild.qza \
+  --p-sampling-depth 18979 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --output-dir ./wild/core-metrics-results
+  
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table ./mainland/feat-table-mainland.qza \
+  --p-sampling-depth 18979 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --output-dir ./mainland/core-metrics-results
+  
+  
+# run stats on each of these:
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity faith_pd_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--o-visualization faith_pd_group-significance.qzv
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix weighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization weighted_unifrac_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix unweighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization unweighted_unifrac_Treatment_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix unweighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization jaccard_Treatment_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization shannon_group-significance.qzv
+
+qiime diversity beta-group-significance \
+--i-distance-matrix weighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sex \
+--o-visualization weighted_unifrac_sex_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix unweighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sex \
+--o-visualization unweighted_unifrac_sex_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix unweighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sex \
+--o-visualization jaccard_sex_significance.qzv \
+--p-pairwise 
+
+
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table ./2019/feat-table-2019.qza \
+  --p-sampling-depth 18979 \
+  --m-metadata-file liz-micro-metadata-IMC.tsv \
+  --output-dir ./2019/core-metrics-results-IMC
+  
+#stats for just comparing islands (grouped) to mainland 
+qiime diversity alpha-group-significance \
+--i-alpha-diversity faith_pd_vector.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv \
+--o-visualization faith_pd_group-significance.qzv
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv  \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix weighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv \
+--m-metadata-column islandmainlandclimate \
+--o-visualization weighted_unifrac_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix unweighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv \
+--m-metadata-column islandmainlandclimate \
+--o-visualization unweighted_unifrac_Treatment_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix unweighted_unifrac_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv \
+--m-metadata-column islandmainlandclimate \
+--o-visualization jaccard_Treatment_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../../liz-micro-metadata-IMC.tsv  \
+--o-visualization shannon_group-significance.qzv
+
+# install picrust2
+conda install q2-picrust2=2020.6 -c conda-forge -c bioconda -c gavinmdouglas
+
+# PICRUSt2
+qiime picrust2 full-pipeline \
+   --i-table final_feature_table.qza \
+   --i-seq rep-seqs-dada2.qza \
+   --output-dir q2-picrust2_output \
+   --p-threads 5 \
+   --p-hsp-method mp \
+   --p-max-nsti 2 \
+   --verbose
+
+# Summarize the PICRUSt2 pathways 
+qiime feature-table summarize \
+   --i-table q2-picrust2_output/pathway_abundance.qza \
+   --o-visualization q2-picrust2_output/pathway_abundance.qzv
+&&
+qiime feature-table summarize \
+   --i-table q2-picrust2_output/ko_metagenome.qza \
+   --o-visualization q2-picrust2_output/ko_metagenome.qzv
+
+#Alpha Rarefaction Visualization: 
+qiime diversity alpha-rarefaction \
+  --i-table q2-picrust2_output/ko_metagenome.qza \
+  --p-max-depth 30000 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --o-visualization q2-picrust2_output/kegg-alpha-rarefaction.qzv
+  
+qiime diversity core-metrics \
+  --i-table q2-picrust2_output/ko_metagenome.qza \
+  --p-sampling-depth 19872671 \
+  --m-metadata-file liz-micro-metadata.tsv \
+  --output-dir q2-picrust2_output/core-metrics-kegg
+  
+# Filter Kegg Data so that it is only the climate or wild lizards for Figure 6
+# climate chamber hot + control
+Qiime feature-table filter-samples \
+--i-table q2-picrust2_output/ko_metagenome.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Climate-Chamber-Control', 'Climate-Chamber-Heat')" \
+--o-filtered-table ./climate-chamber/kegg-climate-chamber.qza
+
+# wild lizards only (2017 ML, 2019 ML, 2019 Islands)
+Qiime feature-table filter-samples \
+--i-table q2-picrust2_output/ko_metagenome.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Island-C-2019', 'Island-P-2019', 'Mainland-2019', 'Mainland-2017')" \
+--o-filtered-table ./wild/kegg-wild.qza
+
+# Core metrics for KEGG in the wild and KEGG in the greenhouses. 
+qiime diversity core-metrics \
+  --i-table  ./wild/kegg-wild.qza \
+  --p-sampling-depth 19872671 \
+  --m-metadata-file liz-micro-metadata-IMC.tsv \
+  --output-dir ./wild/core-metrics-results-KEGG
+  
+qiime diversity core-metrics \
+  --i-table ./climate-chamber/kegg-climate-chamber.qza \
+  --p-sampling-depth 19872671 \
+  --m-metadata-file liz-micro-metadata-IMC.tsv \
+  --output-dir ./climate/core-metrics-results-KEGG
+  
+# run stats on each of these KEGG core metrics folders. 
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix bray_curtis_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization bray_curtis_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix jaccard_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization jaccard_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization shannon_group-significance.qzv
+  
+  
+  # Aldex2 with Kegg 
+qiime feature-table filter-samples \
+  --i-table ko_metagenome.qza \
+  --m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Mainland-2019', 'Mainland-2017')" \
+  --o-filtered-table Mainland-table.qza
+
+qiime feature-table summarize \
+   --i-table Mainland-table.qza \
+   --o-visualization Mainland-table.qzv
+  
+qiime aldex2 aldex2 \
+--i-table Mainland-table.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--m-metadata-column  sourcepop \
+--output-dir sourcepop-test
+  
+# --- Aldex 2 for features --- # 
+  
+  qiime feature-table filter-samples \
+  --i-table final_feature_table.qza \
+  --m-metadata-file liz-micro-metadata.tsv \
+--p-where " [sourcepop] IN ('Mainland-2019', 'Mainland-2017')" \
+  --o-filtered-table mainland-table.qza
+  
+  qiime aldex2 aldex2 \
+--i-table Mainland-table.qza \
+--m-metadata-file liz-micro-metadata.tsv \
+--m-metadata-column  sourcepop \
+--output-dir sourcepop-test
+  
+  qiime aldex2 effect-plot \
+    --i-table sourcepop-test/differentials.qza \
+    --o-visualization sourcepop-test/sourcepop-test
+    
+    
+    qiime aldex2 extract-differences \
+    --i-table sourcepop-test/differentials.qza \
+    --o-differentials sourcepop-test/sig_gut \
+    --p-sig-threshold 0.1 \
+    --p-effect-threshold 0 \
+    --p-difference-threshold 0
+    
+    
+# -- Family level diversity analysis -- # 
+# climate chambers
+qiime taxa collapse \
+--i-table feat-table-climate-chamber.qza \
+--i-taxonomy ../silva-taxonomy.qza \
+--p-level 4 \
+--o-collapsed-table feat-table-climate-chamber-collapsed-family.qza 
+
+qiime diversity core-metrics \
+  --i-table feat-table-climate-chamber-collapsed-family.qza  \
+  --p-sampling-depth 18979 \
+  --m-metadata-file ../liz-micro-metadata.tsv \
+  --output-dir core-metrics-results-family
+  
+# run stats on each of these:
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix bray_curtis_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization bray_curtis_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix jaccard_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization jaccard_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization shannon_group-significance.qzv
+
+# 2019
+qiime taxa collapse \
+--i-table feat-table-2019.qza \
+--i-taxonomy ../silva-taxonomy.qza \
+--p-level 4 \
+--o-collapsed-table feat-table-2019-family.qza 
+
+
+qiime diversity core-metrics \
+  --i-table feat-table-2019-family.qza  \
+  --p-sampling-depth 18979 \
+  --m-metadata-file ../liz-micro-metadata.tsv \
+  --output-dir core-metrics-results-family
+  
+# run stats on each of these:
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix bray_curtis_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization bray_curtis_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix jaccard_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization jaccard_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization shannon_group-significance.qzv
+
+# wild
+qiime taxa collapse \
+--i-table feat-table-wild.qza \
+--i-taxonomy ../silva-taxonomy.qza \
+--p-level 4 \
+--o-collapsed-table feat-table-wild-family.qza 
+
+qiime diversity core-metrics \
+  --i-table feat-table-wild-family.qza  \
+  --p-sampling-depth 18979 \
+  --m-metadata-file ../liz-micro-metadata.tsv \
+  --output-dir core-metrics-results-family
+  
+# run stats on each of these:
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix bray_curtis_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization bray_curtis_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix jaccard_distance_matrix.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+--m-metadata-column sourcepop \
+--o-visualization jaccard_sourcepop_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../../liz-micro-metadata.tsv  \
+--o-visualization shannon_group-significance.qzv
+
+
+
+

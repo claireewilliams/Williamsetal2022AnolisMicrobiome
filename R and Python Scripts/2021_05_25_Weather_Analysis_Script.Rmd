@@ -1,0 +1,714 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r Dry Season}
+# load libraries
+library(tidyverse)
+library(ggthemes)
+library(MASS)
+library(MuMIn)
+library(ggsignif)
+# read in the average air temperature and the rain fall data from the BCI Clearing dataset
+average.air.temp.data<-read.csv("./Panama-Weather-Data-2017-through-2019/bci_cl_at_elect.csv")
+rain.fall.data<-read.csv("./Panama-Weather-Data-2017-through-2019/bci_cl_ra_elect2.CSV")
+# rain.fall.data.withzeroes<-read.csv("bci_cl_ra_elect.CSV")
+
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2017.air<-c(519925:534420)
+vector.2017.air<-rep("2017", length(indexes.dryseason.2017.air))
+data.2017.air<-cbind(average.air.temp.data[indexes.dryseason.2017.air,], vector.2017.air)
+names(data.2017.air)<-c("datetime", "date", "at", "raw", "chk_note", "chk_fail", "year")
+
+# subset data for only the dry season of 2018 and create a dataframe with just those values
+indexes.dryseason.2018.air<-c(554965:569460)
+vector.2018.air<-rep("2018", length(indexes.dryseason.2018.air))
+data.2018.air<-cbind(average.air.temp.data[indexes.dryseason.2018.air,], vector.2018.air)
+names(data.2018.air)<-c("datetime", "date", "at", "raw", "chk_note", "chk_fail", "year")
+
+# subset data for only the dry season of 2019 and create a dataframe with just those values
+indexes.dryseason.2019.air<-c(590005:604500)
+vector.2019.air<-rep("2019", length(indexes.dryseason.2019.air))
+data.2019.air<-cbind(average.air.temp.data[indexes.dryseason.2019.air,], vector.2019.air)
+names(data.2019.air)<-c("datetime", "date", "at", "raw", "chk_note", "chk_fail", "year")
+
+#combine 2017, 2018, and 2019 into one dataframe
+data.air.dry<-rbind(data.2017.air, data.2019.air)
+#filter those out so that there is only the data 
+data.air.dry<-filter(data.air.dry, data.air.dry$chk_note == "good")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2017.rain<-c(155917:156332)
+vector.2017.rain<-rep("2017", length(indexes.dryseason.2017.rain))
+data.2017.rain<-cbind(rain.fall.data[indexes.dryseason.2017.rain,], vector.2017.rain)
+names(data.2017.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2018 and create a dataframe with just those values
+indexes.dryseason.2018.rain<-c(158357:159235)
+vector.2018.rain<-rep("2018", length(indexes.dryseason.2018.rain))
+data.2018.rain<-cbind(rain.fall.data[indexes.dryseason.2018.rain,], vector.2018.rain)
+names(data.2018.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2019 and create a dataframe with just those values
+indexes.dryseason.2019.rain<-c(161577:161975)
+vector.2019.rain<-rep("2019", length(indexes.dryseason.2019.rain))
+data.2019.rain<-cbind(rain.fall.data[indexes.dryseason.2019.rain,], vector.2019.rain)
+names(data.2019.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+data.rain.dry<-rbind(data.2017.rain, data.2019.rain)
+data.rain.dry<-filter(data.rain.dry, data.rain.dry$chk_note == "good")
+
+# this chunk of script has created the data frames: "data.rain" and "data.air"
+
+
+```
+
+
+```{r Wet Season}
+
+rain.fall.data<-read.csv("./Panama-Weather-Data-2017-through-2019/bci_cl_ra_elect2.CSV")
+
+# subset data for only the wet season of 2017 and create a dataframe with just those values
+indexes.wetseason.2017.rain<-c(156333:158356)
+vector.2017.rain.wet<-rep("2017", length(indexes.wetseason.2017.rain))
+data.2017.rain.wet<-cbind(rain.fall.data[indexes.wetseason.2017.rain,], vector.2017.rain.wet)
+names(data.2017.rain.wet)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the wet season of 2018 and create a dataframe with just those values
+indexes.wetseason.2018.rain<-c(159236:161576)
+vector.2018.rain.wet<-rep("2018", length(indexes.wetseason.2018.rain))
+data.2018.rain.wet<-cbind(rain.fall.data[indexes.wetseason.2018.rain,], vector.2018.rain.wet)
+names(data.2018.rain.wet)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the wet season of 2019 and create a dataframe with just those values
+indexes.wetseason.2019.rain<-c(161976:163817)
+vector.2019.rain.wet<-rep("2019", length(indexes.wetseason.2019.rain))
+data.2019.rain.wet<-cbind(rain.fall.data[indexes.wetseason.2019.rain,], vector.2019.rain.wet)
+names(data.2019.rain.wet)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+data.rain.wet<-rbind(data.2017.rain.wet, data.2018.rain.wet, data.2019.rain.wet)
+data.rain.wet<-filter(data.rain.wet, data.rain.wet$chk_note == "good")
+
+
+# full year 
+# subset data for only the wet season of 2017 and create a dataframe with just those values
+indexes.wetseason.2017.air<-c(534421:554965)
+vector.2017.air.wet<-rep("2017", length(indexes.wetseason.2017.air))
+data.2017.air.wet<-cbind(average.air.temp.data[indexes.wetseason.2017.air,], vector.2017.air.wet)
+names(data.2017.air.wet)<-c("datetime", "date", "at", "raw", "chk_note", "chk_fail", "year")
+
+# subset data for only the wet season of 2018 and create a dataframe with just those values
+indexes.wetseason.2018.air<-c(569461:590004)
+vector.2018.air.wet<-rep("2018", length(indexes.wetseason.2018.air))
+data.2018.air.wet<-cbind(average.air.temp.data[indexes.wetseason.2018.air,], vector.2018.air.wet)
+names(data.2018.air.wet)<-c("datetime", "date", "at", "raw", "chk_note", "chk_fail", "year")
+
+# subset data for only the wet season of 2019 and create a dataframe with just those values
+indexes.wetseason.2019.air<-c(604501:625044)
+vector.2019.air.wet<-rep("2019", length(indexes.wetseason.2019.air))
+data.2019.air.wet<-cbind(average.air.temp.data[indexes.wetseason.2019.air,], vector.2019.air.wet)
+names(data.2019.air.wet)<-c("datetime", "date", "at", "raw", "chk_note", "chk_fail", "year")
+
+data.air.wet<-rbind(data.2017.air.wet, data.2018.air.wet, data.2019.air.wet)
+data.air.wet<-filter(data.air.wet, data.air.wet$chk_note == "good")
+
+
+
+
+data.rain.full.year<-rbind(data.rain.wet, data.rain.dry)
+data.air.full.year<-rbind(data.air.wet, data.air.dry)
+
+```
+
+
+```{r}
+
+#rainfall bar charts
+#dry season
+p1<-ggplot(data = data.rain.dry, aes(x = year, y = ra, fill = year)) + 
+  geom_bar(stat = "identity") + 
+  theme_few() +
+  ylab("rain - dry season")
+
+#wetseason
+p2<-ggplot(data = data.rain.wet, aes(x = year, y = ra, fill = year)) + 
+  geom_bar(stat = "identity") +
+  theme_few() + 
+  ylab("rain - wet season") 
+
+#full year
+p3<-ggplot(data = data.rain.full.year, aes(x = year, y = ra, fill = year)) + 
+  geom_bar(stat = "identity") + 
+  theme_few() + 
+  ylab("rain - full year") 
+
+
+library(cowplot)
+
+plot_grid(p1,p2,p3)
+```
+
+```{r Dry Season, Air Temperature}
+# process data.air so that it has a column for average daily temperature 
+data.air.dry$AverageDailyTemperature<-rep(NA, length(data.air.dry$date))
+
+# this for loop is calculating the average daily temperature
+for (i in 1:length(data.air.dry$date)) {
+  if (i > 1) {
+    if  (data.air.dry$date[i] != data.air.dry$date[i-1]) {
+      end_index = i - 1
+      data.air.dry$AverageDailyTemperature[i-1] = mean(data.air.dry$at[start_index:end_index])
+      start_index = i
+    }
+  }
+  else {
+    start_index = i
+  }
+}
+
+data.air.daily<-filter(data.air.dry, !is.na(data.air.dry$AverageDailyTemperature))
+
+data.air.daily %>% split(.$year) %>% map(summary)
+
+
+
+# create a boxplot of the data.air
+p4<-ggplot(data.air.daily, aes(x= year, y=at, fill = year)) +
+  geom_boxplot() + 
+  ylab("Air Temperature, dry season") +
+  ylim(24, 30) + 
+  theme_few()
+  
+
+# run a linear model (ANOVA) on the data temperature data, by year. 
+
+air.temp<-lm(at~year, data = data.air.daily)
+#ANOVA: F-statistic: 63.72 on 1 and 299 DF,  p-value: 3.107e-14
+
+# summary of the anova 
+summary(air.temp)
+
+#histogram of the residuals
+hist(air.temp$residuals)
+plot(air.temp)
+
+pairwise.t.test(data.air.daily$at, data.air.daily$year, p.adjust.method = "bonferroni")
+# 2018 and 2017 basically the same, 2019 super different than either of those two
+```
+
+```{r Full Year and Wet Season Air Temperature Plots}
+
+
+# -------------------- Full Year -------------------- #
+
+data.air.full.year$AverageDailyTemperature<-rep(NA, length(data.air.full.year$date))
+
+# this for loop is calculating the average daily temperature
+for (i in 1:length(data.air.full.year$date)) {
+  if (i > 1) {
+    if  (data.air.full.year$date[i] != data.air.full.year$date[i-1]) {
+      end_index = i - 1
+      data.air.full.year$AverageDailyTemperature[i-1] = mean(data.air.full.year$at[start_index:end_index])
+      start_index = i
+    }
+  }
+  else {
+    start_index = i
+  }
+}
+
+data.air.daily.full.year<-filter(data.air.full.year, !is.na(data.air.full.year$AverageDailyTemperature))
+
+
+# create a boxplot of the data.air
+p5<-ggplot(data.air.daily.full.year, aes(x= year, y=at, fill = year)) +
+  geom_boxplot() + 
+  ylab("Air Temperature, full year") +
+  ylim(24, 30) + 
+  theme_few()
+
+
+air.temp.full.year<-lm(at~year, data = data.air.daily.full.year)
+#ANOVA: 
+
+# summary of the anova 
+summary(air.temp.full.year)
+
+# -------------------- Wet Season -------------------- #
+
+data.air.wet$AverageDailyTemperature<-rep(NA, length(data.air.wet$date))
+
+# this for loop is calculating the average daily temperature
+for (i in 1:length(data.air.wet$date)) {
+  if (i > 1) {
+    if  (data.air.wet$date[i] != data.air.wet$date[i-1]) {
+      end_index = i - 1
+      data.air.wet$AverageDailyTemperature[i-1] = mean(data.air.wet$at[start_index:end_index])
+      start_index = i
+    }
+  }
+  else {
+    start_index = i
+  }
+}
+
+data.air.daily.wet<-filter(data.air.wet, !is.na(data.air.wet$AverageDailyTemperature))
+
+
+# create a boxplot of the data.air
+p6<-ggplot(data.air.daily.wet, aes(x= year, y=at, fill = year)) +
+  geom_boxplot() + 
+  ylab("Air Temperature, wet season") +
+  ylim(24, 30) + 
+  theme_few()
+
+air.temp.wet<-lm(at~year, data = data.air.daily.wet)
+#ANOVA: 
+
+# summary of the anova 
+summary(air.temp.wet)
+
+plot_grid(p4,p5,p6)
+
+
+
+```
+
+
+
+
+
+```{r}
+# read in the otm data from 2017-2019 on all islands and the mainland
+otm.data<-read.csv("./Panama-Weather-Data-2017-through-2019/allotmdatacompiledmaxandmean.csv")
+
+# filter so that we only have data from island P, island C, and the mainland 
+otm.data.filtered<-filter(otm.data, site == "Island P" | site == "Island C" | site == "Mainland")
+otm.data.filtered$site<-factor(otm.data.filtered$site, levels = c("Mainland", "Island C", "Island P"))
+
+# add a year column
+otm.data.filtered$year<-ifelse(grepl("2017", otm.data.filtered$season, fixed = TRUE), "2017",
+                              ifelse(grepl("2018", otm.data.filtered$season, fixed = TRUE), 2018, 2019))
+
+# add a column specifying season, dry or wet
+otm.data.filtered$dry.wet<-ifelse(grepl("Dry", otm.data.filtered$season, fixed = TRUE), "Dry", "Wet")
+
+#select only the listed columns here (remove transect for year as it is full of na's)
+otm.data.filtered<-otm.data.filtered[, c("mean", "max", "site", "season", "year", "dry.wet")]
+
+# retain only the data where we have all of the information 
+otm.data.filtered<-otm.data.filtered[complete.cases(otm.data.filtered),]
+
+
+
+
+# create a glm which has the formula:
+# mean ~ year + site + dry.wet + year:site + year:dry.wet + site:dry.wet + site:year + year:dry.wet:site
+# so this is an model with the two-way and three-way interactions between year, site, and season. 
+otm.data.glm<-glm(mean ~ year*site*dry.wet, data = otm.data.filtered, na.action = "na.fail")
+
+# null model
+otm.data.glm.null<-glm(mean~1, data = otm.data.filtered)
+
+#Summarize the information in that model
+summary(otm.data.glm)
+hist(residuals(otm.data.glm))
+plot(otm.data.glm)
+
+# run dredge on the global model to determine the model with the best AIC, it is the full model
+dredge.otm<-dredge(otm.data.glm)
+
+model.sel(dredge.otm)
+
+# reverse stepwise selection to confirm the results from dredge
+drop1(otm.data.glm, test = "F")
+model2 <- update(otm.data.glm, ~.-year:site:dry.wet)
+summary(model2)
+
+# run an F test on the glm and the null model to determine significance
+anova(otm.data.glm, otm.data.glm.null, test = "F")
+#F-statistic: 264.5 on 14 and 511 DF,  p-value: < 2.2e-16
+
+
+
+```
+
+
+```{r Weather Figure (Figure 1), fig.height=4, fig.width=5.5}
+# We are going to use the processed rain fall data from 2017 and 2019. 
+thecolors<- c("#d9b7ed", "#9d38d9")
+data.rain.dry$year_f<-factor(data.rain.dry$year, c("2017", "2019"))  
+
+p.rain <- ggplot(data.rain.dry, aes(x= year_f, y=ra, fill = year_f)) +
+    stat_summary(fun.y=sum,geom="bar",colour="black")+
+  theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  labs(fill= "Treatment") +
+  scale_fill_manual(values = thecolors) +
+  theme(legend.position= "none") + 
+  xlab("Dry season year (mainland only)") +
+  ylab("Total rainfall (mm)") +
+  aes(fill=year_f) +
+  labs(fill= "Year") +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  scale_y_continuous(breaks = seq(0, 500, 125), 
+                   limits = c(0,500), 
+                   expand = c(0,0))
+
+
+
+
+rain2017<-filter(data.rain.dry, year ==2017)
+rain2019<-filter(data.rain.dry, year == 2019)
+#rain in 2017 was 441.464
+#rain in 2019 was 246.894
+
+
+# factor to year order
+data.air.daily$year_f<- factor(data.air.daily$year, c("2017", "2019"))
+
+# plot
+p.air <- ggplot(data.air.daily, aes(x= year_f, y=at, fill = year_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_few() +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10,face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  theme(legend.position = "none") +
+  xlab("Dry season year (mainland only)")  +
+  ylab("Average daily temperature (°C)") +
+  scale_fill_manual(values = thecolors) +
+    geom_signif(comparisons = list(c("2017", "2019")),
+                map_signif_level = TRUE, test = "t.test", p.adjust = "bonferroni",
+                tip_length = 0, textsize = 8)+
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  scale_y_continuous(breaks = seq(20, 30, 2.5), 
+                   limits = c(20,30), 
+                   expand = c(0,0))
+
+
+
+# filter to just get the 2017 or 2019 temperatures
+temp2017<-filter(data.air.daily, year == 2017)
+temp2019<-filter(data.air.daily, year == 2019)
+
+#mean temp in 2017 was 24.5006
+#mean temp in 2019 was 25.45373
+
+
+
+# filter out only sites of interest and factor them into a specific order
+otm.data.filtered<-filter(otm.data.filtered, site == "Island P" | site == "Island C" | site == "Mainland")
+otm.data.filtered$site<-factor(otm.data.filtered$site, levels = c("Mainland", "Island C", "Island P"))
+
+# create a year column
+otm.data.filtered$year<-ifelse(grepl("2017", otm.data.filtered$season, fixed = TRUE), "2017",
+                              ifelse(grepl("2018", otm.data.filtered$season, fixed = TRUE), 2018, 2019))
+
+otm.data.filtered$dry.wet<-ifelse(grepl("Dry", otm.data.filtered$season, fixed = TRUE), "Dry", "Wet")
+
+# assign the colors for years
+thecolors2<-c("#ede88e", "#f09967", "#ed4b42")
+
+# filter out by season
+wet.2017<-filter(otm.data.filtered, season == "2017 Wet")
+pairwise.t.test(wet.2017$mean, wet.2017$site, p.adjust = "bonferroni")
+dry.2018<-filter(otm.data.filtered, season == "2018 Dry")
+pairwise.t.test(dry.2018$mean, dry.2018$site, p.adjust = "bonferroni")
+
+wet.2018<-filter(otm.data.filtered, season == "2018 Wet")
+pairwise.t.test(wet.2018$mean, wet.2018$site, p.adjust = "bonferroni")
+
+dry.2019<-filter(otm.data.filtered, season == "2019 Dry")
+pairwise.t.test(dry.2019$mean, dry.2019$site, p.adjust = "bonferroni")
+
+wet.2019<-filter(otm.data.filtered, season == "2019 Wet")
+pairwise.t.test(wet.2019$mean, wet.2019$site, p.adjust = "bonferroni")
+
+# create each plot
+plot.2017.wet<-ggplot(wet.2017, aes(x=site, y = mean)) +
+  geom_boxplot(outlier.shape = NA, position = "dodge", aes(fill = site )) +
+  theme_few() +
+  theme(legend.position = "none") +
+  ylab("Mean environmental temperature (°C)") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",
+                                  hjust = 0.5,  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+    theme(legend.position = "none") +
+  scale_fill_manual(values = thecolors2) + 
+  ggtitle ("2017 Wet") + 
+  theme(axis.title.x=element_blank()) +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  geom_signif(map_signif_level = T,
+              test = "t.test",
+              comparisons = list(c("Mainland", "Island C"), 
+                                 c("Mainland", "Island P"),
+                                 c("Island P", "Island C")), 
+              tip_length = 0, y_position = c(27, 27.5, 28),
+              textsize = 8) +
+  scale_y_continuous(breaks = seq(24, 30, 1.5), 
+                   limits = c(24,30), 
+                   expand = c(0,0))  +
+  theme(panel.border = element_blank(), axis.line = element_line()) 
+
+
+plot.2018.dry<-ggplot(dry.2018, aes(x=site, y = mean)) +
+  geom_boxplot(outlier.shape = NA, position = "dodge", aes(fill = site )) +
+  theme_few() +
+  ylab("Mean environmental temperature (°C)") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5,
+                                  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+    theme(legend.position = "none") +
+  scale_fill_manual(values = thecolors2) + 
+  ggtitle ("2018 Dry") + 
+  theme(axis.title=element_blank())+
+  geom_signif(map_signif_level = T,
+              test = "t.test",
+              comparisons = list(c("Mainland", "Island C"), 
+                                 c("Mainland", "Island P"),
+                                 c("Island P", "Island C")),
+              tip_length = 0, y_position = c(27.2, 27.8, 28.4), 
+              textsize = 8) +
+  scale_y_continuous(breaks = seq(24, 30, 1.5), 
+                   limits = c(24,30), 
+                   expand = c(0,0))  +
+  theme(panel.border = element_blank(), axis.line = element_line()) 
+
+
+plot.2018.wet<-ggplot(wet.2018, aes(x=site, y = mean)) +
+  geom_boxplot(outlier.shape = NA, position = "dodge", aes(fill = site )) +
+  theme_few() +
+  ylab("Mean environmental temperature (°C)") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5,
+                                  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+    theme(legend.position = "none") +
+  scale_fill_manual(values = thecolors2) + 
+  ggtitle ("2018 Wet") + 
+  theme(axis.title=element_blank())+
+  geom_signif(map_signif_level = T,
+              test = "t.test",
+              comparisons = list(c("Mainland", "Island C"), 
+                                 c("Mainland", "Island P")),
+              tip_length = 0, y_position = c(27.2, 28),
+              textsize = 8)+
+  scale_y_continuous(breaks = seq(24, 30, 1.5), 
+                   limits = c(24,30), 
+                   expand = c(0,0))  +
+  theme(panel.border = element_blank(), axis.line = element_line()) 
+
+
+plot.2019.dry<-ggplot(dry.2019, aes(x=site, y = mean)) +
+  geom_boxplot(outlier.shape = NA, position = "dodge", aes(fill = site)) +
+  theme_few() +
+  ylab("Mean environmental temperature (°C)") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5,
+                                  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+  scale_fill_manual(values = thecolors2) + 
+  ggtitle ("2019 Dry") + 
+  theme(axis.title=element_blank())+
+    theme(legend.position = "none") +
+  geom_signif(map_signif_level = T,
+              test = "t.test",
+              comparisons = list(c("Mainland", "Island C"), 
+                                 c("Mainland", "Island P")),
+               tip_length = 0, y_position = c(27.5, 28),
+              textsize = 8) +
+  scale_y_continuous(breaks = seq(24, 30, 1.5), 
+                   limits = c(24,30), 
+                   expand = c(0,0))  +
+  theme(panel.border = element_blank(), axis.line = element_line()) 
+
+
+plot.2019.wet<-ggplot(wet.2019, aes(x=site, y = mean)) +
+  geom_boxplot(outlier.shape = NA, position = "dodge", aes(fill = site )) +
+  theme_few() +
+  ylab("Mean environmental temperature (°C)") +
+  theme(axis.text.x= element_text(family="sans",size=10,face = "bold"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1.2),
+        axis.ticks = element_line(colour = "black", size = 1.2,),
+        strip.text.x = element_text(size = 10, family = "sans", face = "bold")) +
+  theme(axis.text.y= element_text(family="sans",size=10, face = "bold")) +
+  theme(plot.title = element_text(size = 14, family="sans",hjust = 0.5,  vjust = 3, face = "bold")) +
+  theme(axis.title=element_text(size=12, family= "sans",face = "bold")) +
+    theme(legend.position = "none") +
+  scale_fill_manual(values = thecolors2) + 
+  ggtitle ("2019 Wet") + 
+  theme(axis.title=element_blank()) +
+  geom_signif(map_signif_level = T,
+              test = "t.test",
+              comparisons = list(c("Mainland", "Island C"), 
+                                 c("Mainland", "Island P")),
+              tip_length = 0, y_position = c(27.3, 28),
+              textsize = 8) +
+  scale_y_continuous(breaks = seq(24, 30, 1.5), 
+                   limits = c(24,30), 
+                   expand = c(0,0))  +
+  theme(panel.border = element_blank(), axis.line = element_line()) 
+
+
+# create a joint plot of all of the seasons. 
+p3x<-plot_grid(plot.2017.wet, 
+          plot.2018.dry, 
+          plot.2018.wet, 
+          plot.2019.dry, 
+          plot.2019.wet, 
+          nrow = 1, 
+          rel_widths = c(1.15, 1, 1, 1, 1))
+
+top_row<-plot_grid(ncol = 1, p3x, labels = c('A'), label_size = 22, label_x = 0, label_y = 1.1)
+bottom_row<-plot_grid(ncol = 2, p.air, p.rain, labels = c('B', 'C'), label_size = 22, label_x = c(0,0), label_y = c(0.98,0.98))
+
+#add title
+title <- ggdraw() + 
+  draw_label( "",
+    fontface = 'bold',
+    x = 0,
+    hjust = .5, 
+    size = 18
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 40)
+  )
+# final plot 
+plot_grid(
+  title, top_row, bottom_row, nrow = 3,
+    rel_heights = c(0.1,1,1), align = "h"
+)
+
+ggsave(width = 14, height = 9, "figure1.png")
+```
+
+```{r}
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2008.rain<-c(130635:131048)
+vector.2008.rain<-rep("2008", length(indexes.dryseason.2008.rain))
+data.2008.rain<-cbind(rain.fall.data[indexes.dryseason.2008.rain,], vector.2008.rain)
+names(data.2008.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2009.rain<-c(132943:133401)
+vector.2009.rain<-rep("2009", length(indexes.dryseason.2009.rain))
+data.2009.rain<-cbind(rain.fall.data[indexes.dryseason.2009.rain,], vector.2009.rain)
+names(data.2009.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2010.rain<-c(135245:135755)
+vector.2010.rain<-rep("2010", length(indexes.dryseason.2010.rain))
+data.2010.rain<-cbind(rain.fall.data[indexes.dryseason.2010.rain,], vector.2010.rain)
+names(data.2010.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2011.rain<-c(139525:140200)
+vector.2011.rain<-rep("2011", length(indexes.dryseason.2011.rain))
+data.2011.rain<-cbind(rain.fall.data[indexes.dryseason.2011.rain,], vector.2011.rain)
+names(data.2011.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2012.rain<-c(142869:143298)
+vector.2012.rain<-rep("2012", length(indexes.dryseason.2012.rain))
+data.2012.rain<-cbind(rain.fall.data[indexes.dryseason.2012.rain,], vector.2012.rain)
+names(data.2012.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2013.rain<-c(146180:146896)
+vector.2013.rain<-rep("2013", length(indexes.dryseason.2013.rain))
+data.2013.rain<-cbind(rain.fall.data[indexes.dryseason.2013.rain,], vector.2013.rain)
+names(data.2013.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2014.rain<-c(148506:148978)
+vector.2014.rain<-rep("2014", length(indexes.dryseason.2014.rain))
+data.2014.rain<-cbind(rain.fall.data[indexes.dryseason.2014.rain,], vector.2014.rain)
+names(data.2014.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2015.rain<-c(150892:151331)
+vector.2015.rain<-rep("2015", length(indexes.dryseason.2015.rain))
+data.2015.rain<-cbind(rain.fall.data[indexes.dryseason.2015.rain,], vector.2015.rain)
+names(data.2015.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2016.rain<-c(152783:153179)
+vector.2016.rain<-rep("2016", length(indexes.dryseason.2016.rain))
+data.2016.rain<-cbind(rain.fall.data[indexes.dryseason.2016.rain,], vector.2016.rain)
+names(data.2016.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2017 and create a dataframe with just those values
+indexes.dryseason.2017.rain<-c(155917:156332)
+vector.2017.rain<-rep("2017", length(indexes.dryseason.2017.rain))
+data.2017.rain<-cbind(rain.fall.data[indexes.dryseason.2017.rain,], vector.2017.rain)
+names(data.2017.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2018 and create a dataframe with just those values
+indexes.dryseason.2018.rain<-c(158357:159235)
+vector.2018.rain<-rep("2018", length(indexes.dryseason.2018.rain))
+data.2018.rain<-cbind(rain.fall.data[indexes.dryseason.2018.rain,], vector.2018.rain)
+names(data.2018.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+# subset data for only the dry season of 2019 and create a dataframe with just those values
+indexes.dryseason.2019.rain<-c(161577:161975)
+vector.2019.rain<-rep("2019", length(indexes.dryseason.2019.rain))
+data.2019.rain<-cbind(rain.fall.data[indexes.dryseason.2019.rain,], vector.2019.rain)
+names(data.2019.rain)<-c("datetime", "ra", "raw", "chk_note", "chkfail", "year")
+
+data.not2019.decade<-rbind(data.2009.rain, data.2010.rain, data.2011.rain,
+                       data.2012.rain, data.2013.rain, data.2014.rain, data.2015.rain,
+                       data.2016.rain, data.2017.rain, data.2018.rain)
+data.not2019.decade<-filter(data.not2019.decade, data.not2019.decade$chk_note == "good")
+
+yearly.rain<-aggregate(x = data.not2019.decade$ra,                # Specify data column
+          by = list(data.not2019.decade$year),              # Specify group indicator
+          FUN = sum)   
+
+mean.yearly.rain<-mean(yearly.rain$x) 
+
+rain.2019<-sum(data.2019.rain$ra)
+
+names(yearly.rain)<-c("Year", "Dry Season Rainfall")
+
+#write.csv(yearly.rain, "DrySeasonRain2009_2018.csv")
+
+# in 2019, the dry season, panama received just 55.78% as much rain as the previous yearly mean 
+
+```
+
+
+
