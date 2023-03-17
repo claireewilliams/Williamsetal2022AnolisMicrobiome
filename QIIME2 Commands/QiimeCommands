@@ -79,7 +79,7 @@ qiime feature-table filter-features \
 qiime taxa filter-table \
   --i-table contam-asvs-removed-pet-table.qza \
   --i-taxonomy silva-taxonomy.qza \
-  --p-exclude mitochondria,chloroplast \
+  --p-exclude oondria,chloroplast \
   --o-filtered-table contam-mito-chloro-removed-pet-table.qza
 
 # visualize table  
